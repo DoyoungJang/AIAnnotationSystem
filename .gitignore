@@ -18,3 +18,4 @@ frontend/vite.config.d.ts
 playwright-report/
 test-results/
 frontend/.vite/
+/sonolabel-server.*.log

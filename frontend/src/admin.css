@@ -16,3 +16,4 @@
 .member-chips > span { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #0c1b25; padding: 7px 10px; border-radius: 18px; font-size: 12px; }
 .member-chips small { font: 500 8px 'DM Mono'; color: var(--teal); }
 .member-assign { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
+.tool-eraser { cursor: crosshair; }
