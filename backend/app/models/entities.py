@@ -86,6 +86,21 @@ class LabelSchemaVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class LabelPresetNode(Base):
+    """A folder or reusable label schema preset in the shared manager library."""
+
+    __tablename__ = "label_preset_nodes"
+    __table_args__ = (Index("ix_label_preset_parent_name", "parent_id", "name"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("label_preset_nodes.id", ondelete="CASCADE"), index=True)
+    node_type: Mapped[str] = mapped_column(String(16), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    labels_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Dataset(Base):
     __tablename__ = "datasets"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

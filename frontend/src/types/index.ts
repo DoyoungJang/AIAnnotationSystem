@@ -7,6 +7,7 @@ export interface ProjectMember{id:string;project_id:string;user_id:string;projec
 export interface Dataset{id:string;project_id:string;name:string;version:number;storage_type:string;manifest_hash:string|null;created_at:string}
 export interface Label{label_code:string;label_name:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';color:string;required:boolean;shortcut?:string}
 export interface Schema{id:string;project_id:string;version:number;schema_json:{labels:Label[]};status:string;created_at:string;created_by:string}
+export interface LabelPresetNode{id:string;parent_id:string|null;node_type:'FOLDER'|'PRESET';name:string;labels:Label[];created_by:string;created_at:string;updated_at:string}
 export interface Asset{id:string;dataset_id:string;series_id:string;media_type:string;original_filename:string;width:number;height:number;frame_count:number;checksum:string;quality_status:string;phi_suspected:boolean}
 export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number}
 export interface Point{x:number;y:number}

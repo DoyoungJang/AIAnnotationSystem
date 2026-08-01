@@ -14,6 +14,7 @@ from app.schemas.api import *
 from app.services.annotation_service import AnnotationService
 from app.services.dataset_service import DatasetService
 from app.services.export_service import ExportService
+from app.services.label_preset_service import LabelPresetService, serialize_preset_node
 from app.services.project_service import ProjectService
 from app.services.review_service import ReviewService
 
@@ -83,6 +84,27 @@ def create_schema(project_id: str, payload: LabelSchemaCreate, db: Session = Dep
 
 @router.get("/projects/{project_id}/label-schemas", response_model=list[LabelSchemaOut])
 def schemas(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).list_schemas(actor, project_id)
+
+
+@router.get("/label-presets", response_model=list[LabelPresetNodeOut])
+def label_presets(db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return [serialize_preset_node(node) for node in LabelPresetService(db).list_nodes(actor)]
+
+
+@router.post("/label-presets/folders", response_model=LabelPresetNodeOut, status_code=201)
+def create_label_preset_folder(payload: LabelPresetFolderCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return serialize_preset_node(LabelPresetService(db).create_folder(actor, payload))
+
+
+@router.post("/label-presets", response_model=LabelPresetNodeOut, status_code=201)
+def create_label_preset(payload: LabelPresetCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return serialize_preset_node(LabelPresetService(db).create_preset(actor, payload))
+
+
+@router.delete("/label-presets/{node_id}", status_code=204)
+def delete_label_preset_node(node_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)) -> Response:
+    LabelPresetService(db).delete_node(actor, node_id)
+    return Response(status_code=204)
 
 
 @router.post("/projects/{project_id}/datasets/import", response_model=ImportOut, status_code=201)

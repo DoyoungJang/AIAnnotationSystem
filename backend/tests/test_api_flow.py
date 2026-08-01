@@ -57,6 +57,27 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert manager_schema.status_code == 201
     assert manager_schema.json()["version"] == 2
     assert manager_schema.json()["schema_json"]["labels"][1]["label_code"] == "LESION_BORDER"
+    department = client.post("/api/v1/label-presets/folders", headers=manager_headers, json={"name":"Radiology","parent_id":None})
+    assert department.status_code == 201 and department.json()["node_type"] == "FOLDER"
+    specialty = client.post("/api/v1/label-presets/folders", headers=manager_headers, json={"name":"Breast","parent_id":department.json()["id"]})
+    assert specialty.status_code == 201 and specialty.json()["parent_id"] == department.json()["id"]
+    preset = client.post("/api/v1/label-presets", headers=manager_headers, json={"name":"Breast lesion","parent_id":specialty.json()["id"],"labels":manager_schema.json()["schema_json"]["labels"]})
+    assert preset.status_code == 201
+    assert preset.json()["labels"][1]["label_code"] == "LESION_BORDER"
+    listed_presets = client.get("/api/v1/label-presets", headers=headers)
+    assert listed_presets.status_code == 200 and {item["id"] for item in listed_presets.json()} == {department.json()["id"], specialty.json()["id"], preset.json()["id"]}
+    duplicate = client.post("/api/v1/label-presets", headers=manager_headers, json={"name":"Breast lesion","parent_id":specialty.json()["id"],"labels":manager_schema.json()["schema_json"]["labels"]})
+    assert duplicate.status_code == 409
+    invalid_parent = client.post("/api/v1/label-presets/folders", headers=manager_headers, json={"name":"Invalid","parent_id":preset.json()["id"]})
+    assert invalid_parent.status_code == 422
+    annotator_login = client.post("/api/v1/auth/login", json={"username":"annotator","password":"Annotator-password-123"})
+    annotator_headers = {"Authorization": f"Bearer {annotator_login.json()['access_token']}"}
+    assert client.get("/api/v1/label-presets", headers=annotator_headers).status_code == 403
+    admin_folder = client.post("/api/v1/label-presets/folders", headers=headers, json={"name":"Admin shared","parent_id":None})
+    assert client.delete(f"/api/v1/label-presets/{admin_folder.json()['id']}", headers=manager_headers).status_code == 403
+    assert client.delete(f"/api/v1/label-presets/{admin_folder.json()['id']}", headers=headers).status_code == 204
+    deleted = client.delete(f"/api/v1/label-presets/{department.json()['id']}", headers=headers)
+    assert deleted.status_code == 204 and client.get("/api/v1/label-presets", headers=headers).json() == []
     files = []
     for index, shade in enumerate((70, 90, 110), start=1):
         content = BytesIO(); Image.new("L", (128, 96), shade).save(content, "PNG")

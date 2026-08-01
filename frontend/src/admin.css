@@ -18,6 +18,33 @@
 .member-assign { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
 .schema-editor > .muted { display: block; margin: -5px 0 16px; }
 .schema-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+.preset-library { margin-bottom: 14px; padding: 15px; border: 1px solid #2b5660; border-radius: 11px; background: #0a1821; }
+.preset-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+.preset-heading > div { display: grid; grid-template-columns: 20px 1fr; gap: 2px 8px; align-items: center; }
+.preset-heading svg { grid-row: 1 / 3; width: 18px; color: var(--teal); }
+.preset-heading small { color: var(--muted); }
+.preset-heading > span { color: #8bded2; font: 500 10px 'DM Mono'; white-space: nowrap; }
+.preset-breadcrumb { display: flex; align-items: center; gap: 3px; min-height: 34px; margin-bottom: 10px; overflow-x: auto; }
+.preset-breadcrumb > span { display: flex; align-items: center; gap: 3px; }
+.preset-breadcrumb svg { width: 13px; color: #5f7885; }
+.preset-breadcrumb button { padding: 6px 8px; border: 0; background: transparent; color: var(--muted); white-space: nowrap; }
+.preset-breadcrumb button.active { color: #9ef4e7; background: #12332f; }
+.preset-create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.preset-create-row form { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.preset-create-row input { min-width: 0; padding: 9px; }
+.preset-create-row button { white-space: nowrap; }
+.preset-notice { margin: 10px 0 0; }
+.preset-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+.preset-card { min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid #213e49; border-radius: 8px; background: #0d202a; }
+.preset-card > div,.preset-open { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.preset-card > div > svg,.preset-open > svg { flex: 0 0 auto; width: 18px; color: #75d9cb; }
+.preset-card span { min-width: 0; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+.preset-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-card small { color: var(--muted); }
+.preset-open { flex: 1; padding: 3px; border: 0; background: transparent; }
+.preset-card-actions { flex: 0 0 auto; }
+.preset-card .preset-delete { padding: 6px; border: 0; background: transparent; color: #ef8b98; }
+.preset-empty { grid-column: 1 / -1; padding: 16px; border: 1px dashed #29434e; border-radius: 8px; color: var(--muted); text-align: center; font-size: 12px; }
 .label-add-form { display: grid; grid-template-columns: 1.35fr 1.1fr 1fr 86px 88px auto auto; gap: 9px; align-items: end; padding: 14px; border: 1px solid #244754; border-radius: 10px; background: #08151d; }
 .label-add-form label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .label-add-form input,.label-add-form select { min-width: 0; padding: 9px; }

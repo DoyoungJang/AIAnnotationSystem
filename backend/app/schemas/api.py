@@ -100,6 +100,36 @@ class LabelSchemaOut(ORMModel):
     created_at: datetime
 
 
+class LabelPresetFolderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    parent_id: str | None = None
+
+
+class LabelPresetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    parent_id: str | None = None
+    labels: list[LabelDefinition] = Field(min_length=1)
+
+    @field_validator("labels")
+    @classmethod
+    def unique_codes(cls, labels: list[LabelDefinition]) -> list[LabelDefinition]:
+        codes = [label.label_code for label in labels]
+        if len(codes) != len(set(codes)):
+            raise ValueError("label_code must be unique")
+        return labels
+
+
+class LabelPresetNodeOut(BaseModel):
+    id: str
+    parent_id: str | None
+    node_type: Literal["FOLDER", "PRESET"]
+    name: str
+    labels: list[LabelDefinition] = Field(default_factory=list)
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class AssetOut(ORMModel):
     id: str
     dataset_id: str

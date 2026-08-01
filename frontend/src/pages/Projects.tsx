@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckSquare, FileImage, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
+import { CheckSquare, ChevronRight, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
 import { ApiError, request } from '../api/client'
-import type { Asset, Dataset, Label, Project, ProjectMember, Schema, Task, User } from '../types'
+import type { Asset, Dataset, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
 export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
 
@@ -22,6 +22,11 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [schemaMessage, setSchemaMessage] = useState('')
   const [schemaError, setSchemaError] = useState('')
   const [publishingSchema, setPublishingSchema] = useState(false)
+  const [presetNodes, setPresetNodes] = useState<LabelPresetNode[]>([])
+  const [presetFolderId, setPresetFolderId] = useState<string | null>(null)
+  const [presetMessage, setPresetMessage] = useState('')
+  const [presetError, setPresetError] = useState('')
+  const [presetLoading, setPresetLoading] = useState(true)
   const [memberId, setMemberId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -36,6 +41,15 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const selected = visibleProjects.find(project => project.id === selectedId) ?? visibleProjects[0]
 
   useEffect(() => { if (!selectedId && visibleProjects[0]) setSelectedId(visibleProjects[0].id) }, [selectedId, visibleProjects])
+  useEffect(() => {
+    let active = true
+    setPresetLoading(true)
+    request<LabelPresetNode[]>('/label-presets')
+      .then(nodes => { if (active) setPresetNodes(nodes) })
+      .catch(cause => { if (active) setPresetError(errorText(cause, '프리셋을 불러오지 못했습니다.')) })
+      .finally(() => { if (active) setPresetLoading(false) })
+    return () => { active = false }
+  }, [actor.id])
   useEffect(() => {
     if (!selected) { setAssets([]); setMembers([]); setSchemas([]); setDraftLabels([]); setSelectedAssetIds([]); return }
     let active = true
@@ -94,6 +108,40 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     } catch (cause) { setSchemaError(errorText(cause, '라벨 스키마를 게시하지 못했습니다.')) }
     finally { setPublishingSchema(false) }
   }
+  const createPresetFolder = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setPresetMessage(''); setPresetError('')
+    const form = event.currentTarget; const data = new FormData(form)
+    try {
+      const folder = await request<LabelPresetNode>('/label-presets/folders', { method: 'POST', body: JSON.stringify({ name: data.get('folder_name'), parent_id: presetFolderId }) })
+      setPresetNodes(current => [...current, folder]); form.reset(); setPresetMessage(`${folder.name} 폴더를 만들었습니다.`)
+    } catch (cause) { setPresetError(errorText(cause, '폴더를 만들지 못했습니다.')) }
+  }
+  const saveLabelPreset = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setPresetMessage(''); setPresetError('')
+    if (!draftLabels.length) { setPresetError('저장할 라벨 항목을 한 개 이상 추가하세요.'); return }
+    const form = event.currentTarget; const data = new FormData(form)
+    try {
+      const preset = await request<LabelPresetNode>('/label-presets', { method: 'POST', body: JSON.stringify({ name: data.get('preset_name'), parent_id: presetFolderId, labels: draftLabels }) })
+      setPresetNodes(current => [...current, preset]); form.reset(); setPresetMessage(`현재 초안을 ${preset.name} 프리셋으로 저장했습니다.`)
+    } catch (cause) { setPresetError(errorText(cause, '프리셋으로 저장하지 못했습니다.')) }
+  }
+  const loadLabelPreset = (preset: LabelPresetNode) => {
+    setDraftLabels(preset.labels.map(label => ({ ...label })))
+    setPresetMessage(`${preset.name} 프리셋의 ${preset.labels.length}개 항목을 프로젝트 초안에 불러왔습니다.`)
+    setPresetError(''); setSchemaMessage(''); setSchemaError('')
+  }
+  const deletePresetNode = async (node: LabelPresetNode) => {
+    const detail = node.node_type === 'FOLDER' ? '폴더 안의 모든 하위 폴더와 프리셋도 함께 삭제됩니다.' : '저장된 프리셋이 삭제됩니다.'
+    if (!window.confirm(`${node.name}을(를) 삭제하시겠습니까?\n${detail}`)) return
+    setPresetMessage(''); setPresetError('')
+    try {
+      await request<void>(`/label-presets/${node.id}`, { method: 'DELETE' })
+      const removedIds = presetDescendantIds(presetNodes, node.id)
+      setPresetNodes(current => current.filter(item => !removedIds.has(item.id)))
+      if (presetFolderId && removedIds.has(presetFolderId)) setPresetFolderId(null)
+      setPresetMessage(`${node.name}을(를) 삭제했습니다.`)
+    } catch (cause) { setPresetError(errorText(cause, '프리셋 항목을 삭제하지 못했습니다.')) }
+  }
   const upload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!selected) return; clearNotices()
     const form = event.currentTarget
@@ -136,6 +184,8 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   function clearNotices() { setMessage(''); setError('') }
 
   const availableMembers = users.filter(user => user.role !== 'ADMINISTRATOR' && !members.some(member => member.user_id === user.id))
+  const presetChildren = childrenInPresetFolder(presetNodes, presetFolderId)
+  const presetTrail = presetFolderTrail(presetNodes, presetFolderId)
   return <>
     {message && <div className="success-banner">{message}</div>}{error && <div className="error-banner">{error}</div>}
     <div className="project-layout">
@@ -148,6 +198,24 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
           <div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>라벨링 항목 관리</h2></div><span>{schemas[0] ? `게시 버전 v${schemas[0].version}` : '게시 전'} · 초안 {draftLabels.length}개</span></div>
           <p className="muted">프로젝트 관리자가 항목을 추가하거나 삭제한 뒤 새 버전으로 게시합니다. 기존 버전과 완료된 Annotation은 변경되지 않습니다.</p>
           <div className="schema-actions"><button onClick={() => { setDraftLabels(DEFAULT_LABELS.map(label => ({ ...label }))); setSchemaMessage('기본 항목을 초안에 불러왔습니다.'); setSchemaError('') }}>기본 항목 불러오기</button><button onClick={() => { setDraftLabels(schemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []); setSchemaMessage('최근 게시 버전으로 되돌렸습니다.'); setSchemaError('') }}><RotateCcw /> 게시 버전으로 되돌리기</button><button className="primary" onClick={publishSchema} disabled={publishingSchema}><Save /> {publishingSchema ? '게시 중...' : '새 버전 게시'}</button></div>
+          <section className="preset-library" aria-label="라벨 프리셋 라이브러리">
+            <div className="preset-heading"><div><Library /><strong>분과별 라벨 프리셋</strong><small>현재 프로젝트 초안을 저장하거나 기존 프리셋을 불러옵니다.</small></div><span>{presetNodes.filter(node => node.node_type === 'PRESET').length}개 프리셋</span></div>
+            <nav className="preset-breadcrumb" aria-label="프리셋 폴더 경로">
+              <button className={!presetFolderId ? 'active' : ''} onClick={() => setPresetFolderId(null)}>전체 프리셋</button>
+              {presetTrail.map(folder => <span key={folder.id}><ChevronRight /><button className={folder.id === presetFolderId ? 'active' : ''} onClick={() => setPresetFolderId(folder.id)}>{folder.name}</button></span>)}
+            </nav>
+            <div className="preset-create-row">
+              <form onSubmit={createPresetFolder}><input name="folder_name" placeholder={presetFolderId ? '하위 폴더 이름' : '분과 폴더 이름'} maxLength={120} required /><button type="submit"><FolderPlus /> 폴더 만들기</button></form>
+              <form onSubmit={saveLabelPreset}><input name="preset_name" placeholder="프리셋 이름" maxLength={120} required /><button className="primary" type="submit" disabled={!draftLabels.length}><Save /> 현재 초안 저장</button></form>
+            </div>
+            {presetMessage && <div className="success-banner preset-notice" role="status">{presetMessage}</div>}
+            {presetError && <div className="error-banner preset-notice" role="alert">{presetError}</div>}
+            {presetLoading ? <div className="preset-empty">프리셋을 불러오는 중입니다.</div> : <div className="preset-grid">
+              {presetChildren.folders.map(folder => <article className="preset-card folder" key={folder.id}><button className="preset-open" onClick={() => setPresetFolderId(folder.id)}><Folder /><span><strong>{folder.name}</strong><small>{presetNodes.filter(node => node.parent_id === folder.id).length}개 항목</small></span></button>{canDeletePresetNode(actor, presetNodes, folder) && <button className="preset-delete" aria-label={`${folder.name} 폴더 삭제`} title="폴더 삭제" onClick={() => deletePresetNode(folder)}><Trash2 /></button>}</article>)}
+              {presetChildren.presets.map(preset => <article className="preset-card" key={preset.id}><div><FileDown /><span><strong>{preset.name}</strong><small>{preset.labels.length}개 라벨</small></span></div><div className="preset-card-actions"><button className="primary" onClick={() => loadLabelPreset(preset)}>불러오기</button>{canDeletePresetNode(actor, presetNodes, preset) && <button className="preset-delete" aria-label={`${preset.name} 프리셋 삭제`} title="프리셋 삭제" onClick={() => deletePresetNode(preset)}><Trash2 /></button>}</div></article>)}
+              {!presetChildren.folders.length && !presetChildren.presets.length && <div className="preset-empty">이 폴더는 비어 있습니다. 폴더를 만들거나 현재 초안을 프리셋으로 저장하세요.</div>}
+            </div>}
+          </section>
           <form className="label-add-form" onSubmit={addLabel}>
             <label>항목 이름<input name="label_name" placeholder="예: 병변 경계" maxLength={120} required /></label>
             <label>라벨 코드<input name="label_code" placeholder="예: LESION_BORDER" pattern="[A-Za-z0-9_-]+" maxLength={80} required /></label>
@@ -201,6 +269,44 @@ export function selectAssetIds(assets: Asset[], mode: AssetSelectionMode): strin
 
 export function normalizeLabelCode(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80)
+}
+
+export function childrenInPresetFolder(nodes: LabelPresetNode[], parentId: string | null) {
+  const children = nodes.filter(node => node.parent_id === parentId)
+  return {
+    folders: children.filter(node => node.node_type === 'FOLDER').sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+    presets: children.filter(node => node.node_type === 'PRESET').sort((a, b) => a.name.localeCompare(b.name, 'ko')),
+  }
+}
+
+export function presetFolderTrail(nodes: LabelPresetNode[], folderId: string | null): LabelPresetNode[] {
+  const trail: LabelPresetNode[] = []
+  const seen = new Set<string>()
+  let currentId = folderId
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId)
+    const folder = nodes.find(node => node.id === currentId && node.node_type === 'FOLDER')
+    if (!folder) break
+    trail.unshift(folder)
+    currentId = folder.parent_id
+  }
+  return trail
+}
+
+export function presetDescendantIds(nodes: LabelPresetNode[], nodeId: string): Set<string> {
+  const ids = new Set([nodeId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const node of nodes) if (node.parent_id && ids.has(node.parent_id) && !ids.has(node.id)) { ids.add(node.id); changed = true }
+  }
+  return ids
+}
+
+export function canDeletePresetNode(actor: User, nodes: LabelPresetNode[], node: LabelPresetNode): boolean {
+  if (actor.role === 'ADMINISTRATOR') return true
+  const ids = presetDescendantIds(nodes, node.id)
+  return [...ids].every(id => nodes.find(item => item.id === id)?.created_by === actor.id)
 }
 
 function annotationTypeName(type: Label['annotation_type']): string {
