@@ -1,6 +1,6 @@
 const API='/api/v1'
 
-export class ApiError extends Error{constructor(public status:number, public detail:unknown){super(typeof detail==='string'?detail:'요청을 처리하지 못했습니다.')}}
+export class ApiError extends Error{constructor(public status:number, public detail:unknown){super(typeof detail==='string'?detail:typeof detail==='object'&&detail!==null&&'message' in detail?String((detail as {message:unknown}).message):'요청을 처리하지 못했습니다.')}}
 
 export function token(){return sessionStorage.getItem('sonolabel-token')}
 export function setToken(value:string|null){if(value)sessionStorage.setItem('sonolabel-token',value);else sessionStorage.removeItem('sonolabel-token')}

@@ -14,17 +14,30 @@ export function useAutoSave(
   onSaved: (savedAnnotationIds: string[]) => void,
 ) {
   const [state, setState] = useState<SaveState>('idle')
+  const [message, setMessage] = useState('')
   const latest = useRef({ annotations, deletedAnnotationIds, version })
+  const editRevision = useRef(0)
+  const inFlight = useRef<Promise<boolean> | null>(null)
   latest.current = { annotations, deletedAnnotationIds, version }
 
-  const save = async () => {
-    if (!taskId || !dirty) return
+  useEffect(() => {
+    editRevision.current += 1
+  }, [annotations, deletedAnnotationIds])
+
+  const save = async (): Promise<boolean> => {
+    if (!taskId || !dirty) return true
+    if (inFlight.current) return inFlight.current
+
+    const operation = (async () => {
     setState('saving')
-    const savedAnnotationIds = latest.current.annotations.map(annotation => annotation.id)
+    setMessage('')
+    const saveRevision = editRevision.current
+    const snapshot = structuredClone(latest.current)
+    const savedAnnotationIds = snapshot.annotations.map(annotation => annotation.id)
     const body = {
-      client_version: latest.current.version,
+      client_version: snapshot.version,
       change_reason: 'autosave',
-      annotations: latest.current.annotations.map(annotation => ({
+      annotations: snapshot.annotations.map(annotation => ({
         annotation_id: annotation.id,
         annotation_type: annotation.annotation_type,
         label_id: annotation.label_id,
@@ -38,21 +51,45 @@ export function useAutoSave(
         model_version: annotation.model_version,
         confidence: annotation.confidence,
       })),
-      deleted_annotation_ids: latest.current.deletedAnnotationIds,
+      deleted_annotation_ids: snapshot.deletedAnnotationIds,
     }
+    const idempotencyKey = crypto.randomUUID()
+    const put = () => request<{ aggregate_version: number }>(`/tasks/${taskId}/annotations`, {
+      method: 'PUT',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(body),
+    })
     try {
-      const result = await request<{ aggregate_version: number }>(`/tasks/${taskId}/annotations`, {
-        method: 'PUT',
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify(body),
-      })
+      let result: { aggregate_version: number }
+      try {
+        result = await put()
+      } catch (error: any) {
+        if (error?.status !== 423) throw error
+        await request(`/tasks/${taskId}/lock`, { method: 'POST' })
+        result = await put()
+      }
       onVersion(result.aggregate_version)
-      onSaved(savedAnnotationIds)
-      localStorage.removeItem(`sonolabel-draft-${taskId}`)
-      setState('saved')
+      if (editRevision.current === saveRevision) {
+        onSaved(savedAnnotationIds)
+        localStorage.removeItem(`sonolabel-draft-${taskId}`)
+        setState('saved')
+      } else {
+        setState('saving')
+      }
+      return true
     } catch (error: any) {
       localStorage.setItem(`sonolabel-draft-${taskId}`, JSON.stringify(body))
       setState(error?.status === 409 ? 'conflict' : navigator.onLine ? 'error' : 'offline')
+      setMessage(error?.message || '자동 저장 요청을 처리하지 못했습니다.')
+      return false
+    }
+    })()
+
+    inFlight.current = operation
+    try {
+      return await operation
+    } finally {
+      if (inFlight.current === operation) inFlight.current = null
     }
   }
 
@@ -62,5 +99,5 @@ export function useAutoSave(
     return () => window.clearTimeout(timer)
   }, [annotations, deletedAnnotationIds, dirty, taskId, version])
 
-  return { state, save }
+  return { state, message, save }
 }
