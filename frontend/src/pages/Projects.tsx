@@ -8,7 +8,7 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
   const [created, setCreated] = useState<Project[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
-  const [managerId, setManagerId] = useState('')
+  const [memberId, setMemberId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loadingAssets, setLoadingAssets] = useState(false)
@@ -60,12 +60,12 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
       setMessage(`${result.assets.length}개 영상 등록, 중복 ${result.duplicate_count}개 제외`); form.reset()
     } catch (cause) { setError(errorText(cause, '데이터를 등록하지 못했습니다.')) }
   }
-  const addManager = async () => {
-    if (!selected || !managerId) return; clearNotices()
+  const addMember = async () => {
+    if (!selected || !memberId) return; clearNotices()
     try {
-      const member = await request<ProjectMember>(`/projects/${selected.id}/members`, { method: 'POST', body: JSON.stringify({ user_id: managerId }) })
-      setMembers(current => [...current.filter(item => item.user_id !== member.user_id), member]); setManagerId(''); setMessage(`${member.display_name}님을 프로젝트 관리자로 지정했습니다.`)
-    } catch (cause) { setError(errorText(cause, '프로젝트 관리자를 지정하지 못했습니다.')) }
+      const member = await request<ProjectMember>(`/projects/${selected.id}/members`, { method: 'POST', body: JSON.stringify({ user_id: memberId }) })
+      setMembers(current => [...current.filter(item => item.user_id !== member.user_id), member]); setMemberId(''); setMessage(`${member.display_name}님을 프로젝트 멤버로 추가했습니다.`)
+    } catch (cause) { setError(errorText(cause, '프로젝트 멤버를 추가하지 못했습니다.')) }
   }
   const assign = async (asset: Asset, assignee: string, reviewer: string) => {
     if (!selected) return; clearNotices()
@@ -76,7 +76,7 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
   }
   function clearNotices() { setMessage(''); setError('') }
 
-  const availableManagers = users.filter(user => user.role === 'PROJECT_MANAGER' && !members.some(member => member.user_id === user.id))
+  const availableMembers = users.filter(user => user.role !== 'ADMINISTRATOR' && !members.some(member => member.user_id === user.id))
   return <>
     {message && <div className="success-banner">{message}</div>}{error && <div className="error-banner">{error}</div>}
     <div className="project-layout">
@@ -88,8 +88,8 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>{selected.name}</h2></div><button onClick={addSchema}>기본 스키마 게시</button></div><p className="muted">게시 후에는 내용을 덮어쓰지 않고 새 버전을 생성합니다.</p></section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROJECT ACCESS</span><h2>프로젝트 멤버</h2></div><span>{members.length}명</span></div>
           <div className="member-chips">{members.map(member => <span key={member.id}>{member.display_name}<small>{member.project_role}</small></span>)}</div>
-          {actor.role === 'ADMINISTRATOR' && <div className="member-assign"><select value={managerId} onChange={event => setManagerId(event.target.value)}><option value="">프로젝트 관리자 선택</option>{availableManagers.map(user => <option key={user.id} value={user.id}>{user.display_name} (@{user.username})</option>)}</select><button onClick={addManager} disabled={!managerId}><UserCog /> 관리자 지정</button></div>}
-          {actor.role === 'ADMINISTRATOR' && availableManagers.length === 0 && <small className="muted">지정 가능한 프로젝트 관리자 계정이 없습니다. 사용자 관리에서 먼저 생성하세요.</small>}
+          <div className="member-assign"><select value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">추가할 멤버 선택</option>{availableMembers.map(user => <option key={user.id} value={user.id}>{user.display_name} (@{user.username}) · {roleName(user.role)}</option>)}</select><button onClick={addMember} disabled={!memberId}><UserCog /> 멤버 추가</button></div>
+          {availableMembers.length === 0 && <small className="muted">추가할 수 있는 사용자가 없습니다. {actor.role === 'ADMINISTRATOR' ? '사용자 관리에서 계정을 먼저 생성하세요.' : 'Sudo 관리자에게 계정 생성을 요청하세요.'}</small>}
         </section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><form className="upload-box" onSubmit={upload}><Upload /><strong>PNG, JPG, TIFF, DICOM</strong><span>원본은 변경하지 않고 보호 저장소에 보관합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">데이터 등록</button></form></section>
         <section className="panel"><div className="panel-heading"><h2>등록 영상 및 작업 배정</h2><span>{assets.length}개</span></div>{loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-grid">{assets.map(asset => <AssetCard key={asset.id} asset={asset} users={users} onAssign={assign} />)}</div> : <div className="empty">등록된 영상이 없습니다.</div>}</section>
@@ -104,3 +104,7 @@ function AssetCard({ asset, users, onAssign }: { asset: Asset; users: User[]; on
 }
 
 function errorText(cause: unknown, fallback: string) { return cause instanceof ApiError ? String(cause.detail) : fallback }
+
+function roleName(role: User['role']) {
+  return { ADMINISTRATOR: 'Sudo 관리자', PROJECT_MANAGER: '프로젝트 관리자', ANNOTATOR: '라벨러', REVIEWER: '검수자', OBSERVER: '관찰자' }[role]
+}

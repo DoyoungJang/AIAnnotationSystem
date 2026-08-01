@@ -36,12 +36,16 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert project.status_code == 201; project_id = project.json()["id"]
     manager = client.post("/api/v1/users", headers=headers, json={"username":"manager","display_name":"Project Manager","role":"PROJECT_MANAGER","password":"Manager-password-123"})
     assert manager.status_code == 201
+    annotator = client.post("/api/v1/users", headers=headers, json={"username":"annotator","display_name":"Annotator","role":"ANNOTATOR","password":"Annotator-password-123"})
+    assert annotator.status_code == 201
     member = client.post(f"/api/v1/projects/{project_id}/members", headers=headers, json={"user_id":manager.json()["id"]})
     assert member.status_code == 201 and member.json()["project_role"] == "PROJECT_MANAGER"
     manager_login = client.post("/api/v1/auth/login", json={"username":"manager","password":"Manager-password-123"})
     manager_headers = {"Authorization": f"Bearer {manager_login.json()['access_token']}"}
     assert client.get(f"/api/v1/projects/{project_id}", headers=manager_headers).status_code == 200
     assert all(user["role"] not in {"ADMINISTRATOR", "PROJECT_MANAGER"} for user in client.get("/api/v1/users", headers=manager_headers).json())
+    added_by_manager = client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":annotator.json()["id"]})
+    assert added_by_manager.status_code == 201 and added_by_manager.json()["project_role"] == "ANNOTATOR"
     forbidden_user = client.post("/api/v1/users", headers=manager_headers, json={"username":"blocked","display_name":"Blocked","role":"ANNOTATOR","password":"Blocked-password-123"})
     assert forbidden_user.status_code == 403
     assert client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":manager.json()["id"]}).status_code == 403
