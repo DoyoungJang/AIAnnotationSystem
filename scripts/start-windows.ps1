@@ -6,6 +6,7 @@ param(
     [ValidateRange(1, 65535)][int]$ApiPort = 8000,
     [string]$WebHost = "0.0.0.0",
     [ValidateRange(1, 65535)][int]$WebPort = 5173,
+    [ValidateSet("Fail", "NextAvailable")][string]$PortConflictMode = "NextAvailable",
     [ValidateSet("Auto", "Always", "Never")][string]$InstallMode = "Auto",
     [string]$SecretKey = "change-this-local-development-secret-key",
     [string]$AdminUsername = "admin",
@@ -62,6 +63,42 @@ if ($InstallFrontend) {
 if (-not (Test-Path -LiteralPath (Join-Path $FrontendDir "node_modules"))) {
     throw "Frontend dependencies are missing. Use -InstallMode Auto or Always."
 }
+
+function Test-SonoPortAvailable {
+    param([ValidateRange(1, 65535)][int]$Port)
+    $Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $Port)
+    try {
+        $Listener.Server.ExclusiveAddressUse = $true
+        $Listener.Start()
+        return $true
+    }
+    catch [System.Net.Sockets.SocketException] { return $false }
+    finally { $Listener.Stop() }
+}
+
+function Resolve-SonoPort {
+    param(
+        [ValidateRange(1, 65535)][int]$PreferredPort,
+        [string]$ServiceName,
+        [int[]]$ExcludedPorts = @()
+    )
+    if ((Test-SonoPortAvailable $PreferredPort) -and $PreferredPort -notin $ExcludedPorts) {
+        return $PreferredPort
+    }
+    if ($PortConflictMode -eq "Fail") {
+        throw "$ServiceName port $PreferredPort is already in use. Change the port or use -PortConflictMode NextAvailable."
+    }
+    for ($Candidate = $PreferredPort + 1; $Candidate -le 65535; $Candidate++) {
+        if ($Candidate -notin $ExcludedPorts -and (Test-SonoPortAvailable $Candidate)) {
+            Write-Host "[port] $ServiceName port $PreferredPort is unavailable; using $Candidate instead."
+            return $Candidate
+        }
+    }
+    throw "No available port was found for $ServiceName after $PreferredPort."
+}
+
+$ApiPort = Resolve-SonoPort -PreferredPort $ApiPort -ServiceName "API"
+$WebPort = Resolve-SonoPort -PreferredPort $WebPort -ServiceName "Web" -ExcludedPorts @($ApiPort)
 
 $NormalizedRoot = $RootDir.Replace("\", "/")
 $env:APP_ENV = "development"

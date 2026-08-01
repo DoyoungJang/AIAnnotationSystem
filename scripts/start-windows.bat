@@ -7,6 +7,8 @@ set "API_PROXY_HOST=127.0.0.1"
 set "API_PORT=8000"
 set "WEB_HOST=0.0.0.0"
 set "WEB_PORT=5173"
+rem NextAvailable automatically uses the next free port. Use Fail for strict ports.
+set "PORT_CONFLICT_MODE=NextAvailable"
 set "INSTALL_MODE=Auto"
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-windows.ps1" ^
@@ -15,6 +17,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-windows.ps1"
   -ApiPort %API_PORT% ^
   -WebHost "%WEB_HOST%" ^
   -WebPort %WEB_PORT% ^
+  -PortConflictMode "%PORT_CONFLICT_MODE%" ^
   -InstallMode "%INSTALL_MODE%"
 
 if errorlevel 1 (

@@ -10,6 +10,7 @@ API_PROXY_HOST="${API_PROXY_HOST:-127.0.0.1}"
 API_PORT="${API_PORT:-8000}"
 WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-5173}"
+PORT_CONFLICT_MODE="${PORT_CONFLICT_MODE:-next-available}" # next-available or fail
 INSTALL_MODE="${INSTALL_MODE:-auto}" # auto, always, or never
 SECRET_KEY="${SECRET_KEY:-change-this-local-development-secret-key}"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
@@ -66,6 +67,52 @@ if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
   echo "Frontend dependencies are missing. Set INSTALL_MODE=auto or always." >&2
   exit 1
 fi
+
+port_available() {
+  python3 - "$1" <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind(("0.0.0.0", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
+resolve_port() {
+  local preferred="$1"
+  local service_name="$2"
+  local excluded="${3:-}"
+  local candidate
+  if [[ "$preferred" != "$excluded" ]] && port_available "$preferred"; then
+    echo "$preferred"
+    return
+  fi
+  if [[ "${PORT_CONFLICT_MODE,,}" == "fail" ]]; then
+    echo "$service_name port $preferred is already in use. Change the port or set PORT_CONFLICT_MODE=next-available." >&2
+    exit 1
+  fi
+  if [[ "${PORT_CONFLICT_MODE,,}" != "next-available" ]]; then
+    echo "PORT_CONFLICT_MODE must be next-available or fail." >&2
+    exit 1
+  fi
+  for ((candidate = preferred + 1; candidate <= 65535; candidate++)); do
+    if [[ "$candidate" != "$excluded" ]] && port_available "$candidate"; then
+      echo "[port] $service_name port $preferred is unavailable; using $candidate instead." >&2
+      echo "$candidate"
+      return
+    fi
+  done
+  echo "No available port was found for $service_name after $preferred." >&2
+  exit 1
+}
+
+API_PORT="$(resolve_port "$API_PORT" "API")"
+WEB_PORT="$(resolve_port "$WEB_PORT" "Web" "$API_PORT")"
 
 export APP_ENV="development"
 export DATABASE_URL SECRET_KEY STORAGE_ROOT EXPORT_ROOT ADMIN_USERNAME ADMIN_PASSWORD

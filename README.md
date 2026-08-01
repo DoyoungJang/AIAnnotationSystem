@@ -39,6 +39,7 @@ API_PROXY_HOST="127.0.0.1"
 API_PORT="8000"
 WEB_HOST="0.0.0.0"
 WEB_PORT="5173"
+PORT_CONFLICT_MODE="next-available"
 INSTALL_MODE="auto"
 ```
 
@@ -82,6 +83,7 @@ Windows 실행 정책을 별도로 변경할 필요는 없습니다. 배치 파�
 ```bat
 set "API_PORT=8000"
 set "WEB_PORT=5173"
+set "PORT_CONFLICT_MODE=NextAvailable"
 ```
 
 PowerShell 스크립트를 직접 실행하면 명령행 인자도 사용할 수 있습니다.
@@ -90,6 +92,7 @@ PowerShell 스크립트를 직접 실행하면 명령행 인자도 사용할 수
 powershell -ExecutionPolicy Bypass -File scripts\start-windows.ps1 `
   -ApiPort 9000 `
   -WebPort 3000 `
+  -PortConflictMode NextAvailable `
   -InstallMode Auto
 ```
 
@@ -102,6 +105,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start-windows.ps1 `
 | `API_PORT` / `ApiPort` | `8000` | FastAPI와 API 문서 포트 |
 | `WEB_HOST` / `WebHost` | `0.0.0.0` | 웹 UI bind 주소 |
 | `WEB_PORT` / `WebPort` | `5173` | 웹 UI 포트 |
+| `PORT_CONFLICT_MODE` / `PortConflictMode` | `next-available` / `NextAvailable` | 포트가 사용 중이면 다음 빈 포트를 자동 선택합니다. `fail` / `Fail`은 즉시 중단합니다. |
 | `INSTALL_MODE` / `InstallMode` | `auto` / `Auto` | 의존성 자동 설치 정책 |
 | `DATABASE_URL` | `backend/sonolabel.db` | SQLAlchemy 데이터베이스 URL |
 | `STORAGE_ROOT` | `storage` | 원본 영상 보호 저장 경로 |
