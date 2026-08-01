@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eraseBrushAnnotations, hitTestAnnotation, rectangleFromPoints } from './AnnotationViewer'
+import { eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, rectangleFromPoints } from './AnnotationViewer'
 import type { Annotation } from '../types'
 
 const makeAnnotation = (annotation_type: Annotation['annotation_type'], geometry_json: Record<string, unknown>): Annotation => ({
@@ -47,6 +47,10 @@ describe('live drawing geometry', () => {
       width: 60,
       height: 30,
     })
+  })
+
+  it('builds a display-only brightness and contrast filter', () => {
+    expect(imageDisplayFilter(135, 80)).toBe('brightness(135%) contrast(80%)')
   })
 })
 

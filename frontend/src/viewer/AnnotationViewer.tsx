@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brush, BoxSelect, Crosshair, Eraser, Hand, Maximize2, Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { Brush, BoxSelect, Contrast, Crosshair, Eraser, Hand, Maximize2, Redo2, RotateCcw, SunMedium, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import type { Annotation, Asset, Label, Point, Tool } from '../types'
 import { clampPoint, fitTransform, screenToSource, sourceToScreen, type ViewTransform } from './transforms/coordinates'
 import { useAnnotationStore } from '../stores/annotationStore'
@@ -30,6 +30,8 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const [hoverPoint, setHoverPoint] = useState<Point | null>(null)
   const [brushSize, setBrushSize] = useState(18)
   const [eraserSize, setEraserSize] = useState(24)
+  const [brightness, setBrightness] = useState(100)
+  const [contrast, setContrast] = useState(100)
   const activeLabel = labels.find(label => label.label_code === selectedLabel) ?? labels[0]
 
   useEffect(() => {
@@ -56,6 +58,11 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   }, [imageUrl])
 
   useEffect(() => {
+    setBrightness(100)
+    setContrast(100)
+  }, [asset.id])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const observer = new ResizeObserver(() => {
@@ -78,9 +85,10 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     context.fillStyle = '#02070b'
     context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight)
     context.save()
+    context.filter = imageDisplayFilter(brightness, contrast)
     context.translate(transform.offsetX, transform.offsetY)
     context.scale(transform.scale, transform.scale)
-    context.drawImage(image, 0, 0, asset.width, asset.height)
+    if (image.complete && image.naturalWidth > 0) context.drawImage(image, 0, 0, asset.width, asset.height)
     context.restore()
 
     for (const annotation of annotations) {
@@ -103,7 +111,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     if ((tool === 'brush' || tool === 'eraser') && hoverPoint && !readOnly) {
       drawRoundCursor(context, hoverPoint, tool === 'brush' ? brushSize : eraserSize, transform, tool === 'brush' ? draftColor : '#ff7182')
     }
-  }, [annotations, transform, draft, dragStart, hoverPoint, asset, labels, activeLabel, tool, brushSize, eraserSize, readOnly])
+  }, [annotations, transform, draft, dragStart, hoverPoint, asset, labels, activeLabel, tool, brushSize, eraserSize, brightness, contrast, readOnly])
 
   const point = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -249,6 +257,11 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       <button title="다시 실행" disabled={!future.length || readOnly} onClick={redo}><Redo2 /></button>
       {tool === 'brush' && <label className="range">브러시 {brushSize}px<input aria-label="브러시 크기" type="range" min="2" max="80" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
       {tool === 'eraser' && <label className="range">지우개 {eraserSize}px<input aria-label="지우개 크기" type="range" min="4" max="120" value={eraserSize} onChange={event => setEraserSize(Number(event.target.value))} /></label>}
+      <div className="image-adjustments" aria-label="영상 표시 조정">
+        <label className="image-adjustment" title="현재 작업 화면의 영상 밝기만 조절합니다."><SunMedium /><span>밝기 {brightness}%</span><input aria-label="영상 밝기" type="range" min="40" max="200" step="5" value={brightness} onInput={event => setBrightness(Number(event.currentTarget.value))} /></label>
+        <label className="image-adjustment" title="현재 작업 화면의 영상 명암 대비만 조절합니다."><Contrast /><span>명암 {contrast}%</span><input aria-label="영상 명암" type="range" min="40" max="200" step="5" value={contrast} onInput={event => setContrast(Number(event.currentTarget.value))} /></label>
+        <button title="영상 표시 초기화" disabled={brightness === 100 && contrast === 100} onClick={() => { setBrightness(100); setContrast(100) }}><RotateCcw /><span>초기화</span></button>
+      </div>
     </div>
     <canvas
       ref={canvasRef}
@@ -264,6 +277,10 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     />
     <div className="viewer-status"><span>{asset.original_filename}</span><span>{asset.width} × {asset.height}</span><span>Zoom {Math.round(transform.scale * 100)}%</span><span>{readOnly ? '읽기 전용' : `${toolName(tool)} · 실시간 미리보기`}</span></div>
   </div>
+}
+
+export function imageDisplayFilter(brightness: number, contrast: number): string {
+  return `brightness(${brightness}%) contrast(${contrast}%)`
 }
 
 function drawGeometry(context: CanvasRenderingContext2D, annotation: Annotation, transform: ViewTransform) {
