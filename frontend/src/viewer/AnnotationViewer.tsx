@@ -18,6 +18,8 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const pointerActiveRef = useRef(false)
   const draftRef = useRef<Point[]>([])
   const eraserLastPointRef = useRef<Point | null>(null)
+  const eraserPointsRef = useRef<Point[]>([])
+  const brushLayerRef = useRef<HTMLCanvasElement | null>(null)
   const {
     annotations, add, tool, setTool, selectedLabel, setLabel, undo, redo, history, future,
     previewReplace, commitPreview,
@@ -82,6 +84,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     context.restore()
 
     for (const annotation of annotations) {
+      if (annotation.annotation_type === 'brush') continue
       const label = labels.find(item => item.label_code === annotation.label_id)
       context.save()
       context.strokeStyle = label?.color ?? '#39d9c5'
@@ -90,6 +93,8 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       drawGeometry(context, annotation, transform)
       context.restore()
     }
+    brushLayerRef.current ??= document.createElement('canvas')
+    drawBrushLayer(context, brushLayerRef.current, annotations, labels, transform)
 
     const draftColor = activeLabel?.color ?? '#39d9c5'
     if (tool === 'bbox' && dragStart && hoverPoint) drawBoundingBoxPreview(context, dragStart, hoverPoint, transform, draftColor)
@@ -109,25 +114,18 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     if (!activeLabel) return
     add({ id: id(), annotation_type, label_id: activeLabel.label_code, geometry_json, attributes_json: metadata, frame_index: 0, source: 'human', model_version: null, confidence: null, current_version: 1 })
   }
-  const applyEraser = (erasePoint: Point) => {
-    const current = useAnnotationStore.getState().annotations
-    const partiallyErased = eraseBrushAnnotations(current, erasePoint, eraserSize / 2)
-    if (partiallyErased !== current) {
-      previewReplace(partiallyErased)
-      return
-    }
-    const target = [...current].reverse().find(annotation => annotation.annotation_type !== 'brush' && hitTestAnnotation(annotation, erasePoint))
-    if (target) previewReplace(current.filter(annotation => annotation.id !== target.id))
-  }
   const applyEraserPath = (from: Point | null, to: Point) => {
     const path = from ? densifyPoints([from, to], Math.max(1, eraserSize / 4)) : [to]
-    path.forEach(applyEraser)
+    eraserPointsRef.current = path.reduce(appendDistinctPoint, eraserPointsRef.current)
+    const before = eraseBeforeRef.current
+    if (before) previewReplace(eraseBrushAnnotationsWithStroke(before, { size: eraserSize, points: eraserPointsRef.current }))
     eraserLastPointRef.current = to
   }
   const finishEraserGesture = () => {
     if (eraseBeforeRef.current) commitPreview(eraseBeforeRef.current)
     eraseBeforeRef.current = null
     eraserLastPointRef.current = null
+    eraserPointsRef.current = []
     erasingRef.current = false
   }
   const chooseTool = (nextTool: Tool) => {
@@ -147,6 +145,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     setHoverPoint(source)
     if (tool === 'eraser') {
       eraseBeforeRef.current = structuredClone(useAnnotationStore.getState().annotations)
+      eraserPointsRef.current = []
       erasingRef.current = true
       applyEraserPath(null, source)
       return
@@ -279,22 +278,57 @@ function drawGeometry(context: CanvasRenderingContext2D, annotation: Annotation,
     drawScreenPath(context, points, transform, true)
     context.fill()
     context.stroke()
-  } else if (annotation.annotation_type === 'brush') {
-    const color = String(context.strokeStyle)
-    for (const stroke of geometry.strokes ?? []) {
-      context.save()
-      context.strokeStyle = 'rgba(0,0,0,.7)'
-      context.fillStyle = 'rgba(0,0,0,.7)'
-      context.lineWidth = stroke.size * transform.scale + 3
-      drawBrushStroke(context, stroke.points, transform)
-      context.strokeStyle = color
-      context.fillStyle = color
-      context.globalAlpha = .82
-      context.lineWidth = stroke.size * transform.scale
-      drawBrushStroke(context, stroke.points, transform)
-      context.restore()
-    }
   }
+}
+
+function drawBrushLayer(
+  context: CanvasRenderingContext2D,
+  layer: HTMLCanvasElement,
+  annotations: Annotation[],
+  labels: Label[],
+  transform: ViewTransform,
+) {
+  const width = Math.max(1, Math.ceil(context.canvas.clientWidth))
+  const height = Math.max(1, Math.ceil(context.canvas.clientHeight))
+  if (layer.width !== width) layer.width = width
+  if (layer.height !== height) layer.height = height
+  const layerContext = layer.getContext('2d')
+  if (!layerContext) return
+  layerContext.clearRect(0, 0, width, height)
+
+  const erasures: BrushStroke[] = []
+  for (const annotation of annotations) {
+    if (annotation.annotation_type !== 'brush') continue
+    const geometry = annotation.geometry_json as { strokes?: BrushStroke[]; erasures?: BrushStroke[] }
+    const color = labels.find(item => item.label_code === annotation.label_id)?.color ?? '#39d9c5'
+    for (const stroke of geometry.strokes ?? []) {
+      layerContext.save()
+      layerContext.strokeStyle = 'rgba(0,0,0,.7)'
+      layerContext.fillStyle = 'rgba(0,0,0,.7)'
+      layerContext.lineWidth = stroke.size * transform.scale + 3
+      drawBrushStroke(layerContext, stroke.points, transform)
+      layerContext.strokeStyle = color
+      layerContext.fillStyle = color
+      layerContext.globalAlpha = .82
+      layerContext.lineWidth = stroke.size * transform.scale
+      drawBrushStroke(layerContext, stroke.points, transform)
+      layerContext.restore()
+    }
+    erasures.push(...(geometry.erasures ?? []))
+  }
+
+  if (erasures.length) {
+    layerContext.save()
+    layerContext.globalCompositeOperation = 'destination-out'
+    layerContext.strokeStyle = '#000'
+    layerContext.fillStyle = '#000'
+    for (const erasure of erasures) {
+      layerContext.lineWidth = erasure.size * transform.scale
+      drawBrushStroke(layerContext, erasure.points, transform)
+    }
+    layerContext.restore()
+  }
+  context.drawImage(layer, 0, 0)
 }
 
 function drawBoundingBoxPreview(context: CanvasRenderingContext2D, start: Point, end: Point, transform: ViewTransform, color: string) {
@@ -388,49 +422,32 @@ export function rectangleFromPoints(start: Point, end: Point) {
 }
 
 export function eraseBrushAnnotations(annotations: Annotation[], center: Point, eraserRadius: number): Annotation[] {
+  return eraseBrushAnnotationsWithStroke(annotations, { size: eraserRadius * 2, points: [center] })
+}
+
+export function eraseBrushAnnotationsWithStroke(annotations: Annotation[], eraser: BrushStroke): Annotation[] {
   let changed = false
-  const next: Annotation[] = []
-  for (const annotation of annotations) {
-    if (annotation.annotation_type !== 'brush') {
-      next.push(annotation)
-      continue
-    }
-    const geometry = annotation.geometry_json as { strokes?: BrushStroke[] }
-    let brushChanged = false
-    const strokes: BrushStroke[] = []
-    for (const stroke of geometry.strokes ?? []) {
-      const threshold = eraserRadius + Math.max(0, Number(stroke.size)) / 2
-      if (!strokeHit(center, stroke.points ?? [], threshold)) {
-        strokes.push(stroke)
-        continue
-      }
-      brushChanged = true
-      strokes.push(...splitStrokeOutsideCircle(stroke, center, threshold))
-    }
-    if (!brushChanged) {
-      next.push(annotation)
-      continue
-    }
+  const next = annotations.map(annotation => {
+    if (annotation.annotation_type !== 'brush') return annotation
+    const geometry = annotation.geometry_json as { strokes?: BrushStroke[]; erasures?: BrushStroke[] }
+    const touched = (geometry.strokes ?? []).some(stroke => brushStrokeTouchedByEraser(stroke, eraser))
+    if (!touched) return annotation
     changed = true
-    if (strokes.length) next.push({ ...annotation, geometry_json: { ...geometry, strokes } })
-  }
+    return {
+      ...annotation,
+      geometry_json: {
+        ...geometry,
+        erasures: [...(geometry.erasures ?? []), structuredClone(eraser)],
+      },
+    }
+  })
   return changed ? next : annotations
 }
 
-function splitStrokeOutsideCircle(stroke: BrushStroke, center: Point, radius: number): BrushStroke[] {
-  const densePoints = densifyPoints(stroke.points ?? [], Math.max(1, Math.min(Math.max(stroke.size, 1) / 3, Math.max(radius, 1) / 2)))
-  const runs: BrushStroke[] = []
-  let current: Point[] = []
-  for (const point of densePoints) {
-    if (distance(point, center) > radius) {
-      current.push(point)
-    } else if (current.length) {
-      runs.push({ size: stroke.size, points: current })
-      current = []
-    }
-  }
-  if (current.length) runs.push({ size: stroke.size, points: current })
-  return runs
+function brushStrokeTouchedByEraser(stroke: BrushStroke, eraser: BrushStroke): boolean {
+  const threshold = Math.max(0, Number(stroke.size)) / 2 + Math.max(0, Number(eraser.size)) / 2
+  const samples = densifyPoints(eraser.points ?? [], Math.max(1, Number(eraser.size) / 4))
+  return samples.some(point => strokeHit(point, stroke.points ?? [], threshold))
 }
 
 function densifyPoints(points: Point[], step: number): Point[] {

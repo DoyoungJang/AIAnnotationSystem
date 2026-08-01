@@ -51,19 +51,19 @@ describe('live drawing geometry', () => {
 })
 
 describe('partial brush erasing', () => {
-  it('cuts only the pointer path and keeps the brush annotation', () => {
+  it('keeps the original stroke and records an exact-size eraser mask', () => {
     const annotation = makeAnnotation('brush', {
       strokes: [{ size: 10, points: [{ x: 0, y: 20 }, { x: 100, y: 20 }] }],
     })
 
     const result = eraseBrushAnnotations([annotation], { x: 50, y: 20 }, 10)
     const strokes = result[0].geometry_json.strokes as { size: number; points: { x: number; y: number }[] }[]
+    const erasures = result[0].geometry_json.erasures as { size: number; points: { x: number; y: number }[] }[]
 
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe(annotation.id)
-    expect(strokes).toHaveLength(2)
-    expect(strokes[0].points.every(point => point.x < 50)).toBe(true)
-    expect(strokes[1].points.every(point => point.x > 50)).toBe(true)
+    expect(strokes).toEqual(annotation.geometry_json.strokes)
+    expect(erasures).toEqual([{ size: 20, points: [{ x: 50, y: 20 }] }])
   })
 
   it('returns the same snapshot when the eraser does not touch a stroke', () => {
@@ -74,12 +74,15 @@ describe('partial brush erasing', () => {
     expect(eraseBrushAnnotations(annotations, { x: 100, y: 100 }, 10)).toBe(annotations)
   })
 
-  it('removes a brush annotation only when every painted part is erased', () => {
+  it('does not delete the full brush width when the eraser only clips an edge', () => {
     const annotation = makeAnnotation('brush', {
-      strokes: [{ size: 10, points: [{ x: 20, y: 20 }, { x: 24, y: 20 }] }],
+      strokes: [{ size: 20, points: [{ x: 0, y: 20 }, { x: 100, y: 20 }] }],
     })
 
-    expect(eraseBrushAnnotations([annotation], { x: 22, y: 20 }, 20)).toEqual([])
+    const [result] = eraseBrushAnnotations([annotation], { x: 50, y: 8 }, 4)
+
+    expect(result.geometry_json.strokes).toEqual(annotation.geometry_json.strokes)
+    expect(result.geometry_json.erasures).toEqual([{ size: 8, points: [{ x: 50, y: 8 }] }])
   })
 
   it('does not alter non-brush annotations', () => {
