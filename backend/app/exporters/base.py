@@ -47,7 +47,7 @@ class CocoExporter(BaseExporter):
         images: dict[str, dict[str, Any]] = {}
         annotations = []
         for index, row in enumerate(rows, 1):
-            images[row["asset_id"]] = {"id": row["asset_id"], "file_name": row["original_filename"], "width": row["width"], "height": row["height"]}
+            images[row["asset_id"]] = {"id": row["asset_id"], "file_name": row.get("export_filename", row["original_filename"]), "width": row["width"], "height": row["height"]}
             if row["annotation_type"] not in {"bbox", "polygon"}:
                 continue
             geometry = row["geometry"]

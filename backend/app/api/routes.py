@@ -194,7 +194,15 @@ def versions(task_id: str, db: Session = Depends(get_db), settings: Settings = D
 
 
 @router.post("/projects/{project_id}/exports", response_model=ExportOut, status_code=201)
-def create_export(project_id: str, payload: ExportRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).create(actor, project_id, payload.format)
+def create_export(project_id: str, payload: ExportRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).create(actor, project_id, payload.format, payload.folder, payload.include_images)
+
+
+@router.get("/projects/{project_id}/exports", response_model=list[ExportOut])
+def project_exports(project_id: str, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).list_jobs(actor, project_id)
+
+
+@router.get("/export-folders", response_model=list[str])
+def export_folders(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).list_folders(actor)
 
 
 @router.get("/exports/{export_id}", response_model=ExportOut)

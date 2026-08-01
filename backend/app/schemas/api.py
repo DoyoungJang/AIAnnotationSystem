@@ -274,6 +274,8 @@ class ReviewRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     format: Literal["csv", "coco", "yolo", "mask"]
+    folder: str = Field(default="", max_length=500)
+    include_images: bool = True
 
 
 class ExportOut(ORMModel):
@@ -281,6 +283,7 @@ class ExportOut(ORMModel):
     project_id: str
     format: str
     status: str
+    storage_key: str | None
     error: str | None
     created_by: str
     created_at: datetime

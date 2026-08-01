@@ -19,3 +19,9 @@ export async function imageUrl(assetId:string,thumbnail=false):Promise<string>{
   if(!response.ok)throw new ApiError(response.status,'영상을 불러올 수 없습니다.')
   return URL.createObjectURL(await response.blob())
 }
+
+export async function downloadExport(exportId:string,filename:string):Promise<void>{
+  const response=await fetch(`${API}/exports/${exportId}/download`,{headers:{Authorization:`Bearer ${token()}`}})
+  if(!response.ok){let detail:unknown='내보내기 파일을 다운로드할 수 없습니다.';try{detail=(await response.json()).detail}catch{}throw new ApiError(response.status,detail)}
+  const url=URL.createObjectURL(await response.blob());const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();URL.revokeObjectURL(url)
+}

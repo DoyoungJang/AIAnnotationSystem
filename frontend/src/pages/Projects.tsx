@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckSquare, ChevronRight, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
-import { ApiError, request } from '../api/client'
-import type { Asset, Dataset, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
+import { Archive, CheckSquare, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
+import { ApiError, downloadExport, request } from '../api/client'
+import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
 export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
 
@@ -27,6 +27,14 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [presetMessage, setPresetMessage] = useState('')
   const [presetError, setPresetError] = useState('')
   const [presetLoading, setPresetLoading] = useState(true)
+  const [exportJobs, setExportJobs] = useState<ExportJob[]>([])
+  const [exportFolders, setExportFolders] = useState<string[]>([])
+  const [exportFolder, setExportFolder] = useState('')
+  const [exportFormat, setExportFormat] = useState<ExportJob['format']>('coco')
+  const [includeExportImages, setIncludeExportImages] = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
+  const [exportError, setExportError] = useState('')
   const [memberId, setMemberId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -51,7 +59,12 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     return () => { active = false }
   }, [actor.id])
   useEffect(() => {
-    if (!selected) { setAssets([]); setMembers([]); setSchemas([]); setDraftLabels([]); setSelectedAssetIds([]); return }
+    let active = true
+    request<string[]>('/export-folders').then(folders => { if (active) setExportFolders(folders) }).catch(() => {})
+    return () => { active = false }
+  }, [actor.id])
+  useEffect(() => {
+    if (!selected) { setAssets([]); setMembers([]); setSchemas([]); setDraftLabels([]); setSelectedAssetIds([]); setExportJobs([]); return }
     let active = true
     setLoadingAssets(true)
     setError('')
@@ -62,12 +75,16 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     setDraftLabels([])
     setSchemaMessage('')
     setSchemaError('')
+    setExportFolder(safeExportFolderName(selected.name))
+    setExportMessage('')
+    setExportError('')
     Promise.all([
       request<Dataset[]>(`/projects/${selected.id}/datasets`).then(async datasets => (await Promise.all(datasets.map(dataset => request<Asset[]>(`/datasets/${dataset.id}/assets`)))).flat()),
       request<ProjectMember[]>(`/projects/${selected.id}/members`),
       request<Schema[]>(`/projects/${selected.id}/label-schemas`),
-    ]).then(([nextAssets, nextMembers, nextSchemas]) => {
-      if (active) { setAssets(nextAssets); setMembers(nextMembers); setSchemas(nextSchemas); setDraftLabels(nextSchemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []) }
+      request<ExportJob[]>(`/projects/${selected.id}/exports`),
+    ]).then(([nextAssets, nextMembers, nextSchemas, nextExports]) => {
+      if (active) { setAssets(nextAssets); setMembers(nextMembers); setSchemas(nextSchemas); setDraftLabels(nextSchemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []); setExportJobs(nextExports) }
     }).catch(cause => { if (active) setError(errorText(cause, '프로젝트 정보를 불러오지 못했습니다.')) })
       .finally(() => { if (active) setLoadingAssets(false) })
     return () => { active = false }
@@ -151,6 +168,23 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       setMessage(`${result.assets.length}개 영상 등록, 중복 ${result.duplicate_count}개 제외`); form.reset()
     } catch (cause) { setError(errorText(cause, '데이터를 등록하지 못했습니다.')) }
   }
+  const createExport = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); if (!selected) return
+    setExportMessage(''); setExportError(''); setExporting(true)
+    try {
+      const job = await request<ExportJob>(`/projects/${selected.id}/exports`, { method: 'POST', body: JSON.stringify({ format: exportFormat, folder: exportFolder, include_images: includeExportImages }) })
+      setExportJobs(current => [job, ...current.filter(item => item.id !== job.id)])
+      const folder = job.storage_key?.split('/').slice(0, -1).join('/') || 'Export 저장소 최상위'
+      setExportFolders(current => folder === 'Export 저장소 최상위' || current.includes(folder) ? current : [...current, folder].sort())
+      setExportMessage(`승인 완료 결과를 ${folder} 폴더에 저장했습니다.`)
+    } catch (cause) { setExportError(errorText(cause, '라벨링 결과를 저장하지 못했습니다.')) }
+    finally { setExporting(false) }
+  }
+  const downloadExportJob = async (job: ExportJob) => {
+    setExportMessage(''); setExportError('')
+    try { await downloadExport(job.id, job.storage_key?.split('/').at(-1) ?? `sonolabel-${job.id}.zip`) }
+    catch (cause) { setExportError(errorText(cause, '내보내기 파일을 다운로드하지 못했습니다.')) }
+  }
   const addMember = async () => {
     if (!selected || !memberId) return; clearNotices()
     try {
@@ -159,6 +193,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     } catch (cause) { setError(errorText(cause, '프로젝트 멤버를 추가하지 못했습니다.')) }
   }
   const projectTasks = useMemo(() => tasks.filter(task => task.project_id === selected?.id), [tasks, selected?.id])
+  const approvedTaskCount = projectTasks.filter(task => task.status === 'APPROVED').length
   const taskByAsset = useMemo(() => {
     const result = new Map<string, Task>()
     for (const task of projectTasks) if (!result.has(task.media_asset_id)) result.set(task.media_asset_id, task)
@@ -234,6 +269,20 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
           <div className="member-assign"><select value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">추가할 멤버 선택</option>{availableMembers.map(user => <option key={user.id} value={user.id}>{user.display_name} (@{user.username}) · {roleName(user.role)}</option>)}</select><button onClick={addMember} disabled={!memberId}><UserCog /> 멤버 추가</button></div>
           {availableMembers.length === 0 && <small className="muted">추가할 수 있는 사용자가 없습니다. {actor.role === 'ADMINISTRATOR' ? '사용자 관리에서 계정을 먼저 생성하세요.' : 'Sudo 관리자에게 계정 생성을 요청하세요.'}</small>}
         </section>
+        <section className="panel export-panel">
+          <div className="panel-heading"><div><span className="eyebrow">APPROVED EXPORT</span><h2>승인 완료 결과 저장</h2></div><span>승인 작업 {approvedTaskCount}개</span></div>
+          <p className="muted">승인된 라벨링 결과만 ZIP으로 만들며, 지정한 경로는 서버의 <code>EXPORT_ROOT</code> 아래에 안전하게 생성됩니다.</p>
+          <form className="export-form" onSubmit={createExport}>
+            <label>저장 폴더<input value={exportFolder} onChange={event => setExportFolder(event.target.value)} list="export-folder-options" placeholder="예: 영상의학과/유방/2026-08" maxLength={500} required /><datalist id="export-folder-options">{exportFolders.map(folder => <option value={folder} key={folder} />)}</datalist><small>슬래시(/)로 하위 폴더를 구분합니다.</small></label>
+            <label>저장 형식<select value={exportFormat} onChange={event => setExportFormat(event.target.value as ExportJob['format'])}><option value="coco">COCO · 박스/폴리곤</option><option value="yolo">YOLO · 박스</option><option value="mask">PNG Mask · 분할</option><option value="csv">CSV · 분류</option></select></label>
+            <label className="export-check"><input type="checkbox" checked={includeExportImages} onChange={event => setIncludeExportImages(event.target.checked)} /> 원본 영상 포함</label>
+            <button className="primary" disabled={exporting || approvedTaskCount === 0}><Archive /> {exporting ? '저장 중...' : '결과 저장'}</button>
+          </form>
+          {approvedTaskCount === 0 && <small className="muted">검수자가 승인한 작업이 있어야 결과를 저장할 수 있습니다.</small>}
+          {exportMessage && <div className="success-banner export-notice" role="status">{exportMessage}</div>}
+          {exportError && <div className="error-banner export-notice" role="alert">{exportError}</div>}
+          <div className="export-history">{exportJobs.slice(0, 8).map(job => <article key={job.id}><span className={`export-status ${job.status.toLowerCase()}`}>{job.status}</span><div><strong>{exportFormatName(job.format)}</strong><small>{job.storage_key ?? job.error ?? '저장 경로 준비 중'}</small></div><time>{new Date(job.created_at).toLocaleString('ko-KR')}</time><button onClick={() => downloadExportJob(job)} disabled={job.status !== 'COMPLETED'}><Download /> 다운로드</button></article>)}{!exportJobs.length && <div className="empty">아직 저장한 결과가 없습니다.</div>}</div>
+        </section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><form className="upload-box" onSubmit={upload}><Upload /><strong>PNG, JPG, TIFF, DICOM</strong><span>원본은 변경하지 않고 보호 저장소에 보관합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">데이터 등록</button></form></section>
         <section className="panel assignment-panel"><div className="panel-heading"><div><span className="eyebrow">BATCH ASSIGNMENT</span><h2>등록 영상 및 작업 배정</h2></div><span>{assets.length}개 · 미배정 {selectableAssets.length}개</span></div>
           {assets.length > 0 && <div className="batch-assignment">
@@ -307,6 +356,14 @@ export function canDeletePresetNode(actor: User, nodes: LabelPresetNode[], node:
   if (actor.role === 'ADMINISTRATOR') return true
   const ids = presetDescendantIds(nodes, node.id)
   return [...ids].every(id => nodes.find(item => item.id === id)?.created_by === actor.id)
+}
+
+export function safeExportFolderName(value: string): string {
+  return value.trim().replaceAll('/', '_').replace(/[<>:"\\|?*\u0000-\u001f]+/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'project-export'
+}
+
+function exportFormatName(format: ExportJob['format']): string {
+  return { csv: 'CSV 분류', coco: 'COCO 박스/폴리곤', yolo: 'YOLO 박스', mask: 'PNG 분할 마스크' }[format]
 }
 
 function annotationTypeName(type: Label['annotation_type']): string {

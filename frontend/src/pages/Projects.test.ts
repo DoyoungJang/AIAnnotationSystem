@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Asset, LabelPresetNode } from '../types'
-import { canDeletePresetNode, childrenInPresetFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, selectAssetIds } from './Projects'
+import { canDeletePresetNode, childrenInPresetFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -58,5 +58,15 @@ describe('hierarchical label preset library', () => {
     expect(canDeletePresetNode(manager, presetNodes, presetNodes[0])).toBe(false)
     expect(canDeletePresetNode({ ...manager, role: 'ADMINISTRATOR' }, presetNodes, presetNodes[0])).toBe(true)
     expect(canDeletePresetNode(manager, presetNodes.map(node => ({ ...node, created_by: 'manager' })), presetNodes[0])).toBe(true)
+  })
+})
+
+describe('export folder defaults', () => {
+  it('keeps a readable project folder name while replacing unsafe path characters', () => {
+    expect(safeExportFolderName(' 유방/초음파:2026 ')).toBe('유방_초음파_2026')
+  })
+
+  it('uses a fallback when the project name cannot form a folder', () => {
+    expect(safeExportFolderName('...')).toBe('project-export')
   })
 })
