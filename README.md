@@ -129,6 +129,12 @@ docker compose up --build
 - API 문서: http://localhost:8080/docs
 - 초기 관리자: `.env`의 `ADMIN_USERNAME` / `ADMIN_PASSWORD`
 
+## 사용자 문서
+
+- [사용자 매뉴얼](docs/user-manual.md): 로그인, 라벨링 도구, 저장·제출, 검수, 단축키와 문제 해결
+- [관리자 매뉴얼](docs/admin-manual.md): 프로젝트와 계정 운영 개요
+- [보안 지침](docs/security.md): 의료정보 보호와 운영 보안
+
 ## 수동 개발 실행과 테스트
 
 세부 개발 명령, 테스트, 배포 및 백업 방법은 [docs/deployment.md](docs/deployment.md)를 참고하십시오. MVP 범위와 제외 기능은 [docs/requirements.md](docs/requirements.md)에 정리되어 있습니다.
