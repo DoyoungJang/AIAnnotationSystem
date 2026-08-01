@@ -1,0 +1,12 @@
+export type Role='ADMINISTRATOR'|'PROJECT_MANAGER'|'ANNOTATOR'|'REVIEWER'|'OBSERVER'
+export type TaskStatus='UNASSIGNED'|'ASSIGNED'|'IN_PROGRESS'|'DRAFT'|'SUBMITTED'|'IN_REVIEW'|'CHANGES_REQUESTED'|'APPROVED'|'REJECTED'|'LOCKED'
+export type Tool='pan'|'bbox'|'polygon'|'brush'|'eraser'
+export interface User{id:string;username:string;display_name:string;role:Role;status:string}
+export interface Project{id:string;name:string;description:string;task_types:string[];status:string;created_at:string;updated_at:string;created_by:string}
+export interface Label{label_code:string;label_name:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';color:string;required:boolean;shortcut?:string}
+export interface Schema{id:string;project_id:string;version:number;schema_json:{labels:Label[]};status:string;created_at:string;created_by:string}
+export interface Asset{id:string;dataset_id:string;series_id:string;media_type:string;original_filename:string;width:number;height:number;frame_count:number;checksum:string;quality_status:string;phi_suspected:boolean}
+export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number}
+export interface Point{x:number;y:number}
+export interface Annotation{id:string;task_id?:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';label_id:string;geometry_json:Record<string,unknown>;attributes_json:Record<string,unknown>;frame_index:number;source:string;model_version:string|null;confidence:number|null;current_version:number}
+export interface AnnotationResponse{aggregate_version:number;annotations:Annotation[]}

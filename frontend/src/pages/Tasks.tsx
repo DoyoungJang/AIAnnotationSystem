@@ -1,0 +1,5 @@
+import { ArrowRight, LockKeyhole } from 'lucide-react'
+import type { Task } from '../types'
+import { Status } from './Dashboard'
+
+export function Tasks({tasks,onOpen,review=false}:{tasks:Task[];onOpen:(task:Task)=>void;review?:boolean}){const visible=review?tasks.filter(t=>['SUBMITTED','IN_REVIEW'].includes(t.status)):tasks;return <><header className="page-header"><div><span className="eyebrow">{review?'QUALITY REVIEW':'ANNOTATION QUEUE'}</span><h1>{review?'검수 대기열':'내 작업'}</h1><p>{review?'제출된 라벨을 확인하고 승인 또는 수정 요청합니다.':'배정된 영상을 열어 라벨링을 시작하세요.'}</p></div></header><section className="task-grid">{visible.map(task=><button className="task-card" key={task.id} onClick={()=>onOpen(task)}><div><span className="mono">TASK {task.id.slice(0,8)}</span><Status status={task.status}/></div><div className="task-image"><LockKeyhole/><span>보호된 의료영상</span></div><footer><span>Priority {task.priority} · Version {task.aggregate_version}</span><ArrowRight/></footer></button>)}{!visible.length&&<div className="empty panel">표시할 작업이 없습니다.</div>}</section></>}
