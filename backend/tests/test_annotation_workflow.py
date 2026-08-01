@@ -88,6 +88,7 @@ def test_approved_export_uses_safe_selected_folder_and_includes_images(context) 
         assert json.loads(bundle.read("manifest.json"))["includes_images"] is True
     assert "영상의학과/유방/2026-08" in export_service.list_folders(admin)
     assert export_service.list_jobs(admin, task.project_id)[0].id == job.id
+    assert export_service.download(admin, job.id).startswith(b"PK")
 
     with pytest.raises(HTTPException) as traversal:
         export_service.create(admin, task.project_id, "coco", "../outside")

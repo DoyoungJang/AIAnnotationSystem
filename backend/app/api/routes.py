@@ -1,5 +1,7 @@
 """Versioned HTTP endpoints with thin routing logic."""
 from io import BytesIO
+from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Response, UploadFile
 from sqlalchemy import func, select
@@ -211,7 +213,17 @@ def export(export_id: str, db: Session = Depends(get_db), settings: Settings = D
 
 @router.get("/exports/{export_id}/download")
 def download_export(export_id: str, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)):
-    return Response(ExportService(db, settings).download(actor, export_id), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="sonolabel-{export_id}.zip"'})
+    service = ExportService(db, settings)
+    job = service.get(actor, export_id)
+    content = service.download(actor, export_id)
+    filename = Path(job.storage_key).name if job.storage_key else f"sonolabel-{export_id}.zip"
+    fallback = f"sonolabel-{export_id}.zip"
+    return Response(content, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}',
+        "Content-Length": str(len(content)),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.get("/projects/{project_id}/statistics", response_model=StatisticsOut)
