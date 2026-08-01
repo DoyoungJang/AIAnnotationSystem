@@ -14,6 +14,8 @@ interface AnnotationState {
   setTool: (tool: Tool) => void
   setLabel: (label: string) => void
   replace: (items: Annotation[]) => void
+  previewReplace: (items: Annotation[]) => void
+  commitPreview: (before: Annotation[]) => void
   add: (item: Annotation) => void
   remove: (id: string) => void
   undo: () => void
@@ -53,6 +55,23 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
     deletedAnnotationIds: deletedIds(state.persistedIds, annotations),
     dirty: true,
   })),
+  previewReplace: annotations => set(state => {
+    if (state.annotations === annotations) return state
+    if (JSON.stringify(state.annotations) === JSON.stringify(annotations)) return state
+    return {
+      annotations: snapshot(annotations),
+      deletedAnnotationIds: deletedIds(state.persistedIds, annotations),
+      dirty: true,
+    }
+  }),
+  commitPreview: before => set(state => {
+    if (JSON.stringify(before) === JSON.stringify(state.annotations)) return state
+    return {
+      history: [...state.history.slice(-49), snapshot(before)],
+      future: [],
+      dirty: true,
+    }
+  }),
   add: item => set(state => {
     const annotations = [...state.annotations, item]
     return {

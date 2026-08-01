@@ -1,31 +1,59 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileImage, Plus, ShieldAlert, Upload, UserCog } from 'lucide-react'
+import { CheckSquare, FileImage, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
 import { ApiError, request } from '../api/client'
-import type { Asset, Dataset, Project, ProjectMember, User } from '../types'
+import type { Asset, Dataset, Label, Project, ProjectMember, Schema, Task, User } from '../types'
 
-export function Projects({ actor, projects, users, onRefresh }: { actor: User; projects: Project[]; users: User[]; onRefresh: () => void }) {
+export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
+
+const DEFAULT_LABELS: Label[] = [
+  { label_code: 'FETAL_HEAD', label_name: '태아 머리', annotation_type: 'polygon', color: '#36d6c2', required: true, shortcut: '1' },
+  { label_code: 'STANDARD_PLANE', label_name: '표준 단면', annotation_type: 'classification', color: '#6ea8fe', required: false, shortcut: '2' },
+  { label_code: 'ANATOMY_ROI', label_name: '해부학 ROI', annotation_type: 'bbox', color: '#f5b84b', required: false, shortcut: '3' },
+  { label_code: 'SEGMENTATION', label_name: '분할 영역', annotation_type: 'brush', color: '#ef6f91', required: false, shortcut: '4' },
+]
+
+export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: User; projects: Project[]; tasks: Task[]; users: User[]; onRefresh: () => void }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? '')
   const [created, setCreated] = useState<Project[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
+  const [schemas, setSchemas] = useState<Schema[]>([])
+  const [draftLabels, setDraftLabels] = useState<Label[]>([])
+  const [schemaMessage, setSchemaMessage] = useState('')
+  const [schemaError, setSchemaError] = useState('')
+  const [publishingSchema, setPublishingSchema] = useState(false)
   const [memberId, setMemberId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loadingAssets, setLoadingAssets] = useState(false)
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+  const [assigneeId, setAssigneeId] = useState('')
+  const [reviewerId, setReviewerId] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignmentMessage, setAssignmentMessage] = useState('')
+  const [assignmentError, setAssignmentError] = useState('')
   const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))], [projects, created])
   const selected = visibleProjects.find(project => project.id === selectedId) ?? visibleProjects[0]
 
   useEffect(() => { if (!selectedId && visibleProjects[0]) setSelectedId(visibleProjects[0].id) }, [selectedId, visibleProjects])
   useEffect(() => {
-    if (!selected) { setAssets([]); setMembers([]); return }
+    if (!selected) { setAssets([]); setMembers([]); setSchemas([]); setDraftLabels([]); setSelectedAssetIds([]); return }
     let active = true
     setLoadingAssets(true)
     setError('')
+    setSelectedAssetIds([])
+    setAssignmentMessage('')
+    setAssignmentError('')
+    setSchemas([])
+    setDraftLabels([])
+    setSchemaMessage('')
+    setSchemaError('')
     Promise.all([
       request<Dataset[]>(`/projects/${selected.id}/datasets`).then(async datasets => (await Promise.all(datasets.map(dataset => request<Asset[]>(`/datasets/${dataset.id}/assets`)))).flat()),
       request<ProjectMember[]>(`/projects/${selected.id}/members`),
-    ]).then(([nextAssets, nextMembers]) => {
-      if (active) { setAssets(nextAssets); setMembers(nextMembers) }
+      request<Schema[]>(`/projects/${selected.id}/label-schemas`),
+    ]).then(([nextAssets, nextMembers, nextSchemas]) => {
+      if (active) { setAssets(nextAssets); setMembers(nextMembers); setSchemas(nextSchemas); setDraftLabels(nextSchemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []) }
     }).catch(cause => { if (active) setError(errorText(cause, '프로젝트 정보를 불러오지 못했습니다.')) })
       .finally(() => { if (active) setLoadingAssets(false) })
     return () => { active = false }
@@ -39,17 +67,32 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
       setCreated(items => [project, ...items]); setSelectedId(project.id); form.reset(); setMessage('프로젝트를 생성했습니다.'); onRefresh()
     } catch (cause) { setError(errorText(cause, '프로젝트를 생성하지 못했습니다.')) }
   }
-  const addSchema = async () => {
-    if (!selected) return; clearNotices()
+  const addLabel = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setSchemaMessage(''); setSchemaError('')
+    const form = event.currentTarget; const data = new FormData(form)
+    const labelCode = normalizeLabelCode(String(data.get('label_code') ?? ''))
+    if (!labelCode) { setSchemaError('라벨 코드는 영문, 숫자, 밑줄 또는 하이픈으로 입력하세요.'); return }
+    if (draftLabels.some(label => label.label_code === labelCode)) { setSchemaError(`이미 ${labelCode} 코드가 있습니다.`); return }
+    const label: Label = {
+      label_code: labelCode,
+      label_name: String(data.get('label_name') ?? '').trim(),
+      annotation_type: String(data.get('annotation_type')) as Label['annotation_type'],
+      color: String(data.get('color')),
+      required: data.get('required') === 'on',
+      shortcut: String(data.get('shortcut') ?? '').trim() || undefined,
+    }
+    setDraftLabels(current => [...current, label]); setSchemaMessage(`${label.label_name} 항목을 초안에 추가했습니다.`); form.reset()
+  }
+  const publishSchema = async () => {
+    if (!selected) return
+    setSchemaMessage(''); setSchemaError('')
+    if (!draftLabels.length) { setSchemaError('게시할 라벨 항목을 한 개 이상 추가하세요.'); return }
+    setPublishingSchema(true)
     try {
-      await request(`/projects/${selected.id}/label-schemas`, { method: 'POST', body: JSON.stringify({ status: 'PUBLISHED', labels: [
-        { label_code: 'FETAL_HEAD', label_name: '태아 머리', annotation_type: 'polygon', color: '#36d6c2', required: true, shortcut: '1' },
-        { label_code: 'STANDARD_PLANE', label_name: '표준 단면', annotation_type: 'classification', color: '#6ea8fe', required: false, shortcut: '2' },
-        { label_code: 'ANATOMY_ROI', label_name: '해부학 ROI', annotation_type: 'bbox', color: '#f5b84b', required: false, shortcut: '3' },
-        { label_code: 'SEGMENTATION', label_name: '분할 영역', annotation_type: 'brush', color: '#ef6f91', required: false, shortcut: '4' },
-      ] }) })
-      setMessage('라벨 스키마의 새 버전을 게시했습니다.')
-    } catch (cause) { setError(errorText(cause, '라벨 스키마를 만들지 못했습니다.')) }
+      const published = await request<Schema>(`/projects/${selected.id}/label-schemas`, { method: 'POST', body: JSON.stringify({ status: 'PUBLISHED', labels: draftLabels }) })
+      setSchemas(current => [published, ...current]); setDraftLabels(published.schema_json.labels.map(label => ({ ...label }))); setSchemaMessage(`라벨 스키마 v${published.version}을 게시했습니다.`)
+    } catch (cause) { setSchemaError(errorText(cause, '라벨 스키마를 게시하지 못했습니다.')) }
+    finally { setPublishingSchema(false) }
   }
   const upload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!selected) return; clearNotices()
@@ -67,12 +110,28 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
       setMembers(current => [...current.filter(item => item.user_id !== member.user_id), member]); setMemberId(''); setMessage(`${member.display_name}님을 프로젝트 멤버로 추가했습니다.`)
     } catch (cause) { setError(errorText(cause, '프로젝트 멤버를 추가하지 못했습니다.')) }
   }
-  const assign = async (asset: Asset, assignee: string, reviewer: string) => {
-    if (!selected) return; clearNotices()
+  const projectTasks = useMemo(() => tasks.filter(task => task.project_id === selected?.id), [tasks, selected?.id])
+  const taskByAsset = useMemo(() => {
+    const result = new Map<string, Task>()
+    for (const task of projectTasks) if (!result.has(task.media_asset_id)) result.set(task.media_asset_id, task)
+    return result
+  }, [projectTasks])
+  const selectableAssets = useMemo(() => assets.filter(asset => !taskByAsset.has(asset.id)), [assets, taskByAsset])
+  const chooseAssets = (mode: AssetSelectionMode) => setSelectedAssetIds(selectAssetIds(selectableAssets, mode))
+  const toggleAsset = (assetId: string) => setSelectedAssetIds(current => current.includes(assetId) ? current.filter(id => id !== assetId) : [...current, assetId])
+  const assignSelected = async () => {
+    setAssignmentMessage(''); setAssignmentError('')
+    if (!selected) { setAssignmentError('프로젝트를 먼저 선택하세요.'); return }
+    if (!selectedAssetIds.length) { setAssignmentError('배정할 이미지를 한 개 이상 선택하세요.'); return }
+    if (!assigneeId) { setAssignmentError('라벨러를 선택하세요.'); return }
+    setAssigning(true)
     try {
-      await request(`/projects/${selected.id}/tasks`, { method: 'POST', body: JSON.stringify({ media_asset_id: asset.id, assigned_to: assignee || null, reviewer_id: reviewer || null, priority: 50 }) })
-      setMessage(`${asset.original_filename} 작업을 배정했습니다.`); onRefresh()
-    } catch (cause) { setError(errorText(cause, '작업을 배정하지 못했습니다.')) }
+      const created = await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: selectedAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId || null, priority: 50 }) })
+      setSelectedAssetIds([])
+      setAssignmentMessage(`${created.length}개 이미지 작업을 배정했습니다.`)
+      onRefresh()
+    } catch (cause) { setAssignmentError(errorText(cause, '작업을 배정하지 못했습니다.')) }
+    finally { setAssigning(false) }
   }
   function clearNotices() { setMessage(''); setError('') }
 
@@ -85,26 +144,65 @@ export function Projects({ actor, projects, users, onRefresh }: { actor: User; p
         <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" required /><input name="description" placeholder="설명" /><button className="primary"><Plus /> 생성</button></form>
       </section>
       <div className="project-details">{selected ? <>
-        <section className="panel"><div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>{selected.name}</h2></div><button onClick={addSchema}>기본 스키마 게시</button></div><p className="muted">게시 후에는 내용을 덮어쓰지 않고 새 버전을 생성합니다.</p></section>
+        <section className="panel schema-editor">
+          <div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>라벨링 항목 관리</h2></div><span>{schemas[0] ? `게시 버전 v${schemas[0].version}` : '게시 전'} · 초안 {draftLabels.length}개</span></div>
+          <p className="muted">프로젝트 관리자가 항목을 추가하거나 삭제한 뒤 새 버전으로 게시합니다. 기존 버전과 완료된 Annotation은 변경되지 않습니다.</p>
+          <div className="schema-actions"><button onClick={() => { setDraftLabels(DEFAULT_LABELS.map(label => ({ ...label }))); setSchemaMessage('기본 항목을 초안에 불러왔습니다.'); setSchemaError('') }}>기본 항목 불러오기</button><button onClick={() => { setDraftLabels(schemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []); setSchemaMessage('최근 게시 버전으로 되돌렸습니다.'); setSchemaError('') }}><RotateCcw /> 게시 버전으로 되돌리기</button><button className="primary" onClick={publishSchema} disabled={publishingSchema}><Save /> {publishingSchema ? '게시 중...' : '새 버전 게시'}</button></div>
+          <form className="label-add-form" onSubmit={addLabel}>
+            <label>항목 이름<input name="label_name" placeholder="예: 병변 경계" maxLength={120} required /></label>
+            <label>라벨 코드<input name="label_code" placeholder="예: LESION_BORDER" pattern="[A-Za-z0-9_-]+" maxLength={80} required /></label>
+            <label>라벨링 도구<select name="annotation_type" defaultValue="bbox"><option value="classification">분류</option><option value="bbox">박스</option><option value="polygon">폴리곤</option><option value="brush">브러시</option></select></label>
+            <label>색상<input name="color" type="color" defaultValue="#35d4bd" /></label>
+            <label>단축키<input name="shortcut" placeholder="예: 5" maxLength={10} /></label>
+            <label className="required-label"><input name="required" type="checkbox" /> 필수 항목</label>
+            <button type="submit"><Plus /> 항목 추가</button>
+          </form>
+          {schemaMessage && <div className="success-banner schema-notice" role="status">{schemaMessage}</div>}
+          {schemaError && <div className="error-banner schema-notice" role="alert">{schemaError}</div>}
+          <div className="schema-label-list">{draftLabels.map((label, index) => <article key={label.label_code}><span className="label-color" style={{ background: label.color }} /><div><strong>{label.label_name}</strong><small>{label.label_code} · {annotationTypeName(label.annotation_type)}{label.required ? ' · 필수' : ''}{label.shortcut ? ` · 단축키 ${label.shortcut}` : ''}</small></div><span className="schema-order">{index + 1}</span><button title={`${label.label_name} 삭제`} aria-label={`${label.label_name} 삭제`} onClick={() => { setDraftLabels(current => current.filter(item => item.label_code !== label.label_code)); setSchemaMessage(''); setSchemaError('') }}><Trash2 /></button></article>)}{!draftLabels.length && <div className="empty">아직 라벨 항목이 없습니다. 위 폼에서 첫 항목을 추가하세요.</div>}</div>
+        </section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROJECT ACCESS</span><h2>프로젝트 멤버</h2></div><span>{members.length}명</span></div>
           <div className="member-chips">{members.map(member => <span key={member.id}>{member.display_name}<small>{member.project_role}</small></span>)}</div>
           <div className="member-assign"><select value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">추가할 멤버 선택</option>{availableMembers.map(user => <option key={user.id} value={user.id}>{user.display_name} (@{user.username}) · {roleName(user.role)}</option>)}</select><button onClick={addMember} disabled={!memberId}><UserCog /> 멤버 추가</button></div>
           {availableMembers.length === 0 && <small className="muted">추가할 수 있는 사용자가 없습니다. {actor.role === 'ADMINISTRATOR' ? '사용자 관리에서 계정을 먼저 생성하세요.' : 'Sudo 관리자에게 계정 생성을 요청하세요.'}</small>}
         </section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><form className="upload-box" onSubmit={upload}><Upload /><strong>PNG, JPG, TIFF, DICOM</strong><span>원본은 변경하지 않고 보호 저장소에 보관합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">데이터 등록</button></form></section>
-        <section className="panel"><div className="panel-heading"><h2>등록 영상 및 작업 배정</h2><span>{assets.length}개</span></div>{loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-grid">{assets.map(asset => <AssetCard key={asset.id} asset={asset} users={users} onAssign={assign} />)}</div> : <div className="empty">등록된 영상이 없습니다.</div>}</section>
+        <section className="panel assignment-panel"><div className="panel-heading"><div><span className="eyebrow">BATCH ASSIGNMENT</span><h2>등록 영상 및 작업 배정</h2></div><span>{assets.length}개 · 미배정 {selectableAssets.length}개</span></div>
+          {assets.length > 0 && <div className="batch-assignment">
+            <div className="selection-toolbar"><strong>{selectedAssetIds.length}개 선택</strong><button onClick={() => chooseAssets('all')}>전체 선택</button><button onClick={() => chooseAssets('odd')}>홀수 번째</button><button onClick={() => chooseAssets('even')}>짝수 번째</button><button onClick={() => chooseAssets('none')}>선택 해제</button></div>
+            <div className="assignment-fields"><label>라벨러<select value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">라벨러 선택</option>{users.filter(user => user.role === 'ANNOTATOR' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><label>검수자 (선택)<select value={reviewerId} onChange={event => setReviewerId(event.target.value)}><option value="">검수자 없음</option>{users.filter(user => user.role === 'REVIEWER' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><button className="primary batch-assign-button" onClick={assignSelected} disabled={assigning}><CheckSquare /> {assigning ? '배정 중...' : `${selectedAssetIds.length}개 이미지 배정`}</button></div>
+            {!selectedAssetIds.length && <small className="muted">카드의 체크박스 또는 전체·홀수·짝수 선택 버튼으로 이미지를 선택하세요.</small>}
+            {assignmentMessage && <div className="success-banner assignment-notice" role="status">{assignmentMessage}</div>}
+            {assignmentError && <div className="error-banner assignment-notice" role="alert">{assignmentError}</div>}
+          </div>}
+          {loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-grid">{assets.map(asset => <AssetCard key={asset.id} asset={asset} selected={selectedAssetIds.includes(asset.id)} task={taskByAsset.get(asset.id)} users={users} onToggle={toggleAsset} />)}</div> : <div className="empty">등록된 영상이 없습니다.</div>}
+        </section>
       </> : <div className="empty panel">프로젝트를 생성하거나 선택하세요.</div>}</div>
     </div>
   </>
 }
 
-function AssetCard({ asset, users, onAssign }: { asset: Asset; users: User[]; onAssign: (asset: Asset, assignee: string, reviewer: string) => void }) {
-  const [assignee, setAssignee] = useState(''); const [reviewer, setReviewer] = useState('')
-  return <article className="asset-card"><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small><select value={assignee} onChange={event => setAssignee(event.target.value)}><option value="">라벨러 선택</option>{users.filter(user => user.role === 'ANNOTATOR' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select><select value={reviewer} onChange={event => setReviewer(event.target.value)}><option value="">검수자 선택</option>{users.filter(user => user.role === 'REVIEWER' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select><button onClick={() => onAssign(asset, assignee, reviewer)} disabled={!assignee}>배정</button></article>
+function AssetCard({ asset, selected, task, users, onToggle }: { asset: Asset; selected: boolean; task?: Task; users: User[]; onToggle: (assetId: string) => void }) {
+  const assignee = users.find(user => user.id === task?.assigned_to)
+  const reviewer = users.find(user => user.id === task?.reviewer_id)
+  return <article className={`asset-card selectable ${selected ? 'selected' : ''} ${task ? 'assigned' : ''}`}><label className="asset-selector"><input type="checkbox" checked={selected} disabled={!!task} onChange={() => onToggle(asset.id)} aria-label={`${asset.original_filename} 선택`} /><span>{task ? '배정됨' : '선택'}</span></label><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong title={asset.original_filename}>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small>{task ? <div className="assignment-summary"><strong>{assignee?.display_name ?? '미지정'}</strong><small>{reviewer ? `검수 ${reviewer.display_name}` : '검수자 없음'} · {task.status}</small></div> : <small className="available-badge">배정 가능</small>}</article>
 }
 
 function errorText(cause: unknown, fallback: string) { return cause instanceof ApiError ? String(cause.detail) : fallback }
 
 function roleName(role: User['role']) {
   return { ADMINISTRATOR: 'Sudo 관리자', PROJECT_MANAGER: '프로젝트 관리자', ANNOTATOR: '라벨러', REVIEWER: '검수자', OBSERVER: '관찰자' }[role]
+}
+
+export function selectAssetIds(assets: Asset[], mode: AssetSelectionMode): string[] {
+  if (mode === 'none') return []
+  return assets.filter((_, index) => mode === 'all' || (mode === 'odd' ? index % 2 === 0 : index % 2 === 1)).map(asset => asset.id)
+}
+
+export function normalizeLabelCode(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80)
+}
+
+function annotationTypeName(type: Label['annotation_type']): string {
+  return { classification: '분류', bbox: '박스', polygon: '폴리곤', brush: '브러시' }[type]
 }

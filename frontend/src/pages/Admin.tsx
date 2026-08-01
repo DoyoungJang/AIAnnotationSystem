@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { FolderKanban, UserPlus, Users } from 'lucide-react'
 import { ApiError, request } from '../api/client'
-import type { Project, Role, User } from '../types'
+import type { Project, Role, Task, User } from '../types'
 import { Projects } from './Projects'
 
 const roleNames: Record<Role, string> = {
@@ -12,9 +12,10 @@ const roleNames: Record<Role, string> = {
   OBSERVER: '관찰자',
 }
 
-export function Admin({ actor, projects, users, onRefresh }: {
+export function Admin({ actor, projects, tasks, users, onRefresh }: {
   actor: User
   projects: Project[]
+  tasks: Task[]
   users: User[]
   onRefresh: () => void
 }) {
@@ -55,7 +56,7 @@ export function Admin({ actor, projects, users, onRefresh }: {
       <button className={section === 'projects' ? 'active' : ''} onClick={() => setSection('projects')}><FolderKanban /> 프로젝트 관리</button>
       {actor.role === 'ADMINISTRATOR' && <button className={section === 'users' ? 'active' : ''} onClick={() => setSection('users')}><Users /> 사용자 관리</button>}
     </div>
-    {section === 'projects' && <Projects actor={actor} projects={projects} users={users} onRefresh={onRefresh} />}
+    {section === 'projects' && <Projects actor={actor} projects={projects} tasks={tasks} users={users} onRefresh={onRefresh} />}
     {section === 'users' && actor.role === 'ADMINISTRATOR' && <div className="admin-user-layout">
       <section className="panel">
         <div className="panel-heading"><div><span className="eyebrow">ACCOUNT CREATION</span><h2>사용자 생성</h2></div><UserPlus /></div>

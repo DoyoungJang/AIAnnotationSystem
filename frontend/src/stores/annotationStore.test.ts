@@ -73,4 +73,25 @@ describe('annotation history', () => {
     expect(useAnnotationStore.getState().deletedAnnotationIds).toEqual(['one'])
     expect(useAnnotationStore.getState().dirty).toBe(true)
   })
+
+  it('records an eraser drag as one undo operation', () => {
+    const original = { ...annotation, annotation_type: 'brush' as const, geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] }],
+    } }
+    const firstPreview = { ...original, geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 70, y: 0 }] }],
+    } }
+    const finalPreview = { ...original, geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 40, y: 0 }] }],
+    } }
+    useAnnotationStore.getState().load([original])
+
+    useAnnotationStore.getState().previewReplace([firstPreview])
+    useAnnotationStore.getState().previewReplace([finalPreview])
+    useAnnotationStore.getState().commitPreview([original])
+
+    expect(useAnnotationStore.getState().history).toHaveLength(1)
+    useAnnotationStore.getState().undo()
+    expect(useAnnotationStore.getState().annotations).toEqual([original])
+  })
 })

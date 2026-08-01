@@ -1,47 +1,495 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Brush, BoxSelect, Crosshair, Eraser, Hand, Maximize2, Redo2, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import type { Annotation, Asset, Label, Point, Tool } from '../types'
 import { clampPoint, fitTransform, screenToSource, sourceToScreen, type ViewTransform } from './transforms/coordinates'
 import { useAnnotationStore } from '../stores/annotationStore'
 
-interface Props{asset:Asset;imageUrl:string;labels:Label[];readOnly?:boolean}
-const id=()=>crypto.randomUUID()
+interface Props { asset: Asset; imageUrl: string; labels: Label[]; readOnly?: boolean }
+interface BrushStroke { size: number; points: Point[] }
 
-export function AnnotationViewer({asset,imageUrl,labels,readOnly=false}:Props){
-  const canvasRef=useRef<HTMLCanvasElement>(null);const imageRef=useRef<HTMLImageElement>(new Image())
-  const {annotations,add,remove,tool,setTool,selectedLabel,setLabel,undo,redo,history,future}=useAnnotationStore()
-  const [transform,setTransform]=useState<ViewTransform>({scale:1,offsetX:0,offsetY:0});const [draft,setDraft]=useState<Point[]>([]);const [dragStart,setDragStart]=useState<Point|null>(null);const [brushSize,setBrushSize]=useState(18)
-  const activeLabel=labels.find(label=>label.label_code===selectedLabel)??labels[0]
-  useEffect(()=>{if(!selectedLabel&&labels[0])setLabel(labels[0].label_code)},[labels,selectedLabel,setLabel])
-  useEffect(()=>{if(tool==='bbox'||tool==='polygon'||tool==='brush'){const matching=labels.find(label=>label.annotation_type===tool);if(matching&&activeLabel?.annotation_type!==tool)setLabel(matching.label_code)}},[tool,labels,activeLabel?.annotation_type,setLabel])
-  useEffect(()=>{const image=imageRef.current;image.src=imageUrl;image.onload=()=>fit();return()=>{image.onload=null}},[imageUrl])
-  const fit=()=>{const canvas=canvasRef.current;if(canvas)setTransform(fitTransform(asset.width,asset.height,canvas.clientWidth,canvas.clientHeight))}
-  useEffect(()=>{const canvas=canvasRef.current;if(!canvas)return;const observer=new ResizeObserver(()=>{canvas.width=canvas.clientWidth*devicePixelRatio;canvas.height=canvas.clientHeight*devicePixelRatio;fit()});observer.observe(canvas);return()=>observer.disconnect()},[asset.id])
-  useEffect(()=>{const canvas=canvasRef.current,image=imageRef.current;if(!canvas)return;const context=canvas.getContext('2d');if(!context)return;context.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);context.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);context.fillStyle='#02070b';context.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);context.save();context.translate(transform.offsetX,transform.offsetY);context.scale(transform.scale,transform.scale);context.drawImage(image,0,0,asset.width,asset.height);context.restore();
-    for(const annotation of annotations){const label=labels.find(item=>item.label_code===annotation.label_id);context.strokeStyle=label?.color??'#39d9c5';context.fillStyle=`${label?.color??'#39d9c5'}33`;context.lineWidth=2;drawGeometry(context,annotation,transform)}
-    if(draft.length){context.strokeStyle=activeLabel?.color??'#39d9c5';context.lineWidth=2;context.beginPath();draft.forEach((point,index)=>{const p=sourceToScreen(point,transform);index?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y)});context.stroke()}
-  },[annotations,transform,draft,asset,labels,activeLabel])
-  const point=(event:React.PointerEvent<HTMLCanvasElement>)=>{const rect=event.currentTarget.getBoundingClientRect();return clampPoint(screenToSource({x:event.clientX-rect.left,y:event.clientY-rect.top},transform),asset.width,asset.height)}
-  const metadata={image_width:asset.width,image_height:asset.height}
-  const create=(annotation_type:Annotation['annotation_type'],geometry_json:Record<string,unknown>)=>{if(!activeLabel)return;add({id:id(),annotation_type,label_id:activeLabel.label_code,geometry_json,attributes_json:metadata,frame_index:0,source:'human',model_version:null,confidence:null,current_version:1})}
-  const down=(event:React.PointerEvent<HTMLCanvasElement>)=>{if(readOnly)return;event.currentTarget.setPointerCapture(event.pointerId);const p=point(event);if(tool==='eraser'){const target=[...annotations].reverse().find(annotation=>hitTestAnnotation(annotation,p));if(target)remove(target.id);return}if(tool==='bbox'||tool==='pan')setDragStart(tool==='pan'?{x:event.clientX,y:event.clientY}:p);if(tool==='brush')setDraft([p])}
-  const move=(event:React.PointerEvent<HTMLCanvasElement>)=>{if(tool==='pan'&&dragStart){setTransform(value=>({...value,offsetX:value.offsetX+event.clientX-dragStart.x,offsetY:value.offsetY+event.clientY-dragStart.y}));setDragStart({x:event.clientX,y:event.clientY})}else if(tool==='brush'&&draft.length){const p=point(event);setDraft(value=>[...value,p])}}
-  const up=(event:React.PointerEvent<HTMLCanvasElement>)=>{if(readOnly)return;const p=point(event);if(tool==='bbox'&&dragStart){const x=Math.min(p.x,dragStart.x),y=Math.min(p.y,dragStart.y),width=Math.abs(p.x-dragStart.x),height=Math.abs(p.y-dragStart.y);if(width>2&&height>2)create('bbox',{x,y,width,height})}else if(tool==='brush'&&draft.length){const points=[...draft,p];if(points.length>=2)create('brush',{strokes:[{size:brushSize,points}]})}setDragStart(null);if(tool==='brush')setDraft([])}
-  const click=(event:React.MouseEvent<HTMLCanvasElement>)=>{if(readOnly||tool!=='polygon'||event.detail>1)return;const p=point(event as unknown as React.PointerEvent<HTMLCanvasElement>);setDraft(value=>[...value,p])}
-  const doubleClick=(event:React.MouseEvent<HTMLCanvasElement>)=>{event.preventDefault();if(tool!=='polygon')return;const p=point(event as unknown as React.PointerEvent<HTMLCanvasElement>);const points=draft.length>=3?draft:[...draft,p];if(points.length>=3)create('polygon',{points});setDraft([])}
-  const wheel=(event:React.WheelEvent<HTMLCanvasElement>)=>{event.preventDefault();const rect=event.currentTarget.getBoundingClientRect(),cursor={x:event.clientX-rect.left,y:event.clientY-rect.top},source=screenToSource(cursor,transform),scale=Math.max(.1,Math.min(8,transform.scale*(event.deltaY<0?1.12:.89)));setTransform({scale,offsetX:cursor.x-source.x*scale,offsetY:cursor.y-source.y*scale})}
-  const tools:{value:Tool;label:string;icon:React.ReactNode}[]=[{value:'pan',label:'이동 (M)',icon:<Hand/>},{value:'bbox',label:'박스 (W)',icon:<BoxSelect/>},{value:'polygon',label:'폴리곤 (P)',icon:<Crosshair/>},{value:'brush',label:'브러시 (B)',icon:<Brush/>},{value:'eraser',label:'지우개 (E)',icon:<Eraser/>}]
-  return <div className="viewer-shell"><div className="viewer-toolbar">{tools.map(item=><button key={item.value} className={tool===item.value?'active':''} disabled={readOnly} title={item.label} onClick={()=>setTool(item.value)}>{item.icon}<span>{item.label.split(' ')[0]}</span></button>)}<span className="divider"/><button title="확대" onClick={()=>setTransform(t=>({...t,scale:Math.min(8,t.scale*1.2)}))}><ZoomIn/></button><button title="축소" onClick={()=>setTransform(t=>({...t,scale:Math.max(.1,t.scale/1.2)}))}><ZoomOut/></button><button title="화면 맞춤" onClick={fit}><Maximize2/></button><span className="divider"/><button disabled={!history.length||readOnly} onClick={undo}><Undo2/></button><button disabled={!future.length||readOnly} onClick={redo}><Redo2/></button>{tool==='brush'&&<label className="range">브러시 {brushSize}px<input type="range" min="2" max="80" value={brushSize} onChange={e=>setBrushSize(Number(e.target.value))}/></label>}</div><canvas ref={canvasRef} className={`viewer-canvas tool-${tool}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onClick={click} onDoubleClick={doubleClick} onWheel={wheel}/><div className="viewer-status"><span>{asset.original_filename}</span><span>{asset.width} × {asset.height}</span><span>Zoom {Math.round(transform.scale*100)}%</span><span>{readOnly?'읽기 전용':'원본 픽셀 좌표'}</span></div></div>
+const id = () => crypto.randomUUID()
+
+export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imageRef = useRef<HTMLImageElement>(new Image())
+  const eraseBeforeRef = useRef<Annotation[] | null>(null)
+  const erasingRef = useRef(false)
+  const drawingBrushRef = useRef(false)
+  const pointerActiveRef = useRef(false)
+  const draftRef = useRef<Point[]>([])
+  const eraserLastPointRef = useRef<Point | null>(null)
+  const {
+    annotations, add, tool, setTool, selectedLabel, setLabel, undo, redo, history, future,
+    previewReplace, commitPreview,
+  } = useAnnotationStore()
+  const [transform, setTransform] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 })
+  const [draft, setDraft] = useState<Point[]>([])
+  const [dragStart, setDragStart] = useState<Point | null>(null)
+  const [hoverPoint, setHoverPoint] = useState<Point | null>(null)
+  const [brushSize, setBrushSize] = useState(18)
+  const [eraserSize, setEraserSize] = useState(24)
+  const activeLabel = labels.find(label => label.label_code === selectedLabel) ?? labels[0]
+
+  useEffect(() => {
+    if (!selectedLabel && labels[0]) setLabel(labels[0].label_code)
+  }, [labels, selectedLabel, setLabel])
+
+  useEffect(() => {
+    if (tool === 'bbox' || tool === 'polygon' || tool === 'brush') {
+      const matching = labels.find(label => label.annotation_type === tool)
+      if (matching && activeLabel?.annotation_type !== tool) setLabel(matching.label_code)
+    }
+  }, [tool, labels, activeLabel?.annotation_type, setLabel])
+
+  const fit = () => {
+    const canvas = canvasRef.current
+    if (canvas) setTransform(fitTransform(asset.width, asset.height, canvas.clientWidth, canvas.clientHeight))
+  }
+
+  useEffect(() => {
+    const image = imageRef.current
+    image.src = imageUrl
+    image.onload = () => fit()
+    return () => { image.onload = null }
+  }, [imageUrl])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const observer = new ResizeObserver(() => {
+      canvas.width = canvas.clientWidth * devicePixelRatio
+      canvas.height = canvas.clientHeight * devicePixelRatio
+      fit()
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [asset.id])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const image = imageRef.current
+    if (!canvas) return
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+    context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight)
+    context.fillStyle = '#02070b'
+    context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight)
+    context.save()
+    context.translate(transform.offsetX, transform.offsetY)
+    context.scale(transform.scale, transform.scale)
+    context.drawImage(image, 0, 0, asset.width, asset.height)
+    context.restore()
+
+    for (const annotation of annotations) {
+      const label = labels.find(item => item.label_code === annotation.label_id)
+      context.save()
+      context.strokeStyle = label?.color ?? '#39d9c5'
+      context.fillStyle = `${label?.color ?? '#39d9c5'}33`
+      context.lineWidth = 2
+      drawGeometry(context, annotation, transform)
+      context.restore()
+    }
+
+    const draftColor = activeLabel?.color ?? '#39d9c5'
+    if (tool === 'bbox' && dragStart && hoverPoint) drawBoundingBoxPreview(context, dragStart, hoverPoint, transform, draftColor)
+    if (tool === 'polygon' && draft.length) drawPolygonPreview(context, draft, hoverPoint, transform, draftColor)
+    if (tool === 'brush' && draft.length) drawBrushPreview(context, draft, brushSize, transform, draftColor)
+    if ((tool === 'brush' || tool === 'eraser') && hoverPoint && !readOnly) {
+      drawRoundCursor(context, hoverPoint, tool === 'brush' ? brushSize : eraserSize, transform, tool === 'brush' ? draftColor : '#ff7182')
+    }
+  }, [annotations, transform, draft, dragStart, hoverPoint, asset, labels, activeLabel, tool, brushSize, eraserSize, readOnly])
+
+  const point = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return clampPoint(screenToSource({ x: event.clientX - rect.left, y: event.clientY - rect.top }, transform), asset.width, asset.height)
+  }
+  const metadata = { image_width: asset.width, image_height: asset.height }
+  const create = (annotation_type: Annotation['annotation_type'], geometry_json: Record<string, unknown>) => {
+    if (!activeLabel) return
+    add({ id: id(), annotation_type, label_id: activeLabel.label_code, geometry_json, attributes_json: metadata, frame_index: 0, source: 'human', model_version: null, confidence: null, current_version: 1 })
+  }
+  const applyEraser = (erasePoint: Point) => {
+    const current = useAnnotationStore.getState().annotations
+    const partiallyErased = eraseBrushAnnotations(current, erasePoint, eraserSize / 2)
+    if (partiallyErased !== current) {
+      previewReplace(partiallyErased)
+      return
+    }
+    const target = [...current].reverse().find(annotation => annotation.annotation_type !== 'brush' && hitTestAnnotation(annotation, erasePoint))
+    if (target) previewReplace(current.filter(annotation => annotation.id !== target.id))
+  }
+  const applyEraserPath = (from: Point | null, to: Point) => {
+    const path = from ? densifyPoints([from, to], Math.max(1, eraserSize / 4)) : [to]
+    path.forEach(applyEraser)
+    eraserLastPointRef.current = to
+  }
+  const finishEraserGesture = () => {
+    if (eraseBeforeRef.current) commitPreview(eraseBeforeRef.current)
+    eraseBeforeRef.current = null
+    eraserLastPointRef.current = null
+    erasingRef.current = false
+  }
+  const chooseTool = (nextTool: Tool) => {
+    setTool(nextTool)
+    setDraft([])
+    draftRef.current = []
+    setDragStart(null)
+    drawingBrushRef.current = false
+    finishEraserGesture()
+  }
+
+  const down = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (readOnly) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    pointerActiveRef.current = true
+    const source = point(event)
+    setHoverPoint(source)
+    if (tool === 'eraser') {
+      eraseBeforeRef.current = structuredClone(useAnnotationStore.getState().annotations)
+      erasingRef.current = true
+      applyEraserPath(null, source)
+      return
+    }
+    if (tool === 'bbox' || tool === 'pan') setDragStart(tool === 'pan' ? { x: event.clientX, y: event.clientY } : source)
+    if (tool === 'brush') {
+      drawingBrushRef.current = true
+      draftRef.current = [source]
+      setDraft([source])
+    }
+  }
+
+  const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const source = point(event)
+    setHoverPoint(source)
+    if (tool === 'pan' && dragStart) {
+      setTransform(value => ({ ...value, offsetX: value.offsetX + event.clientX - dragStart.x, offsetY: value.offsetY + event.clientY - dragStart.y }))
+      setDragStart({ x: event.clientX, y: event.clientY })
+    } else if (tool === 'brush' && drawingBrushRef.current) {
+      draftRef.current = appendDistinctPoint(draftRef.current, source)
+      setDraft(draftRef.current)
+    } else if (tool === 'eraser' && erasingRef.current) {
+      applyEraserPath(eraserLastPointRef.current, source)
+    }
+  }
+
+  const up = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (readOnly) return
+    const source = point(event)
+    setHoverPoint(source)
+    if (tool === 'bbox' && dragStart) {
+      const geometry = rectangleFromPoints(dragStart, source)
+      if (geometry.width > 2 && geometry.height > 2) create('bbox', geometry)
+    } else if (tool === 'brush' && drawingBrushRef.current) {
+      const points = appendDistinctPoint(draftRef.current, source)
+      if (points.length >= 2) create('brush', { strokes: [{ size: brushSize, points }] })
+    } else if (tool === 'eraser' && erasingRef.current) {
+      applyEraserPath(eraserLastPointRef.current, source)
+      finishEraserGesture()
+    }
+    pointerActiveRef.current = false
+    drawingBrushRef.current = false
+    setDragStart(null)
+    if (tool === 'brush') {
+      draftRef.current = []
+      setDraft([])
+    }
+  }
+
+  const cancel = () => {
+    pointerActiveRef.current = false
+    drawingBrushRef.current = false
+    setDragStart(null)
+    if (tool === 'brush') {
+      draftRef.current = []
+      setDraft([])
+    }
+    finishEraserGesture()
+  }
+
+  const click = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (readOnly || tool !== 'polygon' || event.detail > 1) return
+    // React clears currentTarget after the handler returns, so resolve canvas
+    // coordinates before the state updater is evaluated.
+    const source = point(event)
+    setDraft(value => appendDistinctPoint(value, source))
+  }
+  const doubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    if (readOnly || tool !== 'polygon') return
+    const source = point(event)
+    const points = draft.length >= 3 ? draft : appendDistinctPoint(draft, source)
+    if (points.length >= 3) create('polygon', { points })
+    setDraft([])
+  }
+  const wheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    const source = screenToSource(cursor, transform)
+    const scale = Math.max(.1, Math.min(8, transform.scale * (event.deltaY < 0 ? 1.12 : .89)))
+    setTransform({ scale, offsetX: cursor.x - source.x * scale, offsetY: cursor.y - source.y * scale })
+  }
+  const tools: { value: Tool; label: string; icon: React.ReactNode }[] = [
+    { value: 'pan', label: '이동 (M)', icon: <Hand /> },
+    { value: 'bbox', label: '박스 (W)', icon: <BoxSelect /> },
+    { value: 'polygon', label: '폴리곤 (P)', icon: <Crosshair /> },
+    { value: 'brush', label: '브러시 (B)', icon: <Brush /> },
+    { value: 'eraser', label: '지우개 (E)', icon: <Eraser /> },
+  ]
+
+  return <div className="viewer-shell">
+    <div className="viewer-toolbar">
+      {tools.map(item => <button key={item.value} className={tool === item.value ? 'active' : ''} disabled={readOnly} title={item.label} onClick={() => chooseTool(item.value)}>{item.icon}<span>{item.label.split(' ')[0]}</span></button>)}
+      <span className="divider" />
+      <button title="확대" onClick={() => setTransform(value => ({ ...value, scale: Math.min(8, value.scale * 1.2) }))}><ZoomIn /></button>
+      <button title="축소" onClick={() => setTransform(value => ({ ...value, scale: Math.max(.1, value.scale / 1.2) }))}><ZoomOut /></button>
+      <button title="화면 맞춤" onClick={fit}><Maximize2 /></button>
+      <span className="divider" />
+      <button title="실행 취소" disabled={!history.length || readOnly} onClick={undo}><Undo2 /></button>
+      <button title="다시 실행" disabled={!future.length || readOnly} onClick={redo}><Redo2 /></button>
+      {tool === 'brush' && <label className="range">브러시 {brushSize}px<input aria-label="브러시 크기" type="range" min="2" max="80" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
+      {tool === 'eraser' && <label className="range">지우개 {eraserSize}px<input aria-label="지우개 크기" type="range" min="4" max="120" value={eraserSize} onChange={event => setEraserSize(Number(event.target.value))} /></label>}
+    </div>
+    <canvas
+      ref={canvasRef}
+      className={`viewer-canvas tool-${tool}`}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={cancel}
+      onPointerLeave={() => { if (!pointerActiveRef.current) setHoverPoint(null) }}
+      onClick={click}
+      onDoubleClick={doubleClick}
+      onWheel={wheel}
+    />
+    <div className="viewer-status"><span>{asset.original_filename}</span><span>{asset.width} × {asset.height}</span><span>Zoom {Math.round(transform.scale * 100)}%</span><span>{readOnly ? '읽기 전용' : `${toolName(tool)} · 실시간 미리보기`}</span></div>
+  </div>
 }
 
-function drawGeometry(context:CanvasRenderingContext2D,annotation:Annotation,transform:ViewTransform){const geometry=annotation.geometry_json as any;if(annotation.annotation_type==='bbox'){const p=sourceToScreen({x:geometry.x,y:geometry.y},transform);context.fillRect(p.x,p.y,geometry.width*transform.scale,geometry.height*transform.scale);context.strokeRect(p.x,p.y,geometry.width*transform.scale,geometry.height*transform.scale)}else if(annotation.annotation_type==='polygon'){context.beginPath();geometry.points?.forEach((point:Point,index:number)=>{const p=sourceToScreen(point,transform);index?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y)});context.closePath();context.fill();context.stroke()}else if(annotation.annotation_type==='brush'){for(const stroke of geometry.strokes??[]){context.beginPath();context.lineCap='round';context.lineJoin='round';context.lineWidth=stroke.size*transform.scale;stroke.points.forEach((point:Point,index:number)=>{const p=sourceToScreen(point,transform);index?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y)});context.stroke()}}}
+function drawGeometry(context: CanvasRenderingContext2D, annotation: Annotation, transform: ViewTransform) {
+  const geometry = annotation.geometry_json as any
+  if (annotation.annotation_type === 'bbox') {
+    const screen = sourceToScreen({ x: geometry.x, y: geometry.y }, transform)
+    context.fillRect(screen.x, screen.y, geometry.width * transform.scale, geometry.height * transform.scale)
+    context.strokeRect(screen.x, screen.y, geometry.width * transform.scale, geometry.height * transform.scale)
+  } else if (annotation.annotation_type === 'polygon') {
+    const points = geometry.points ?? []
+    if (!points.length) return
+    drawScreenPath(context, points, transform, true)
+    context.fill()
+    context.stroke()
+  } else if (annotation.annotation_type === 'brush') {
+    const color = String(context.strokeStyle)
+    for (const stroke of geometry.strokes ?? []) {
+      context.save()
+      context.strokeStyle = 'rgba(0,0,0,.7)'
+      context.fillStyle = 'rgba(0,0,0,.7)'
+      context.lineWidth = stroke.size * transform.scale + 3
+      drawBrushStroke(context, stroke.points, transform)
+      context.strokeStyle = color
+      context.fillStyle = color
+      context.globalAlpha = .82
+      context.lineWidth = stroke.size * transform.scale
+      drawBrushStroke(context, stroke.points, transform)
+      context.restore()
+    }
+  }
+}
 
-export function hitTestAnnotation(annotation:Annotation,point:Point):boolean{const geometry=annotation.geometry_json as any;if(annotation.annotation_type==='bbox')return point.x>=geometry.x&&point.x<=geometry.x+geometry.width&&point.y>=geometry.y&&point.y<=geometry.y+geometry.height;if(annotation.annotation_type==='polygon')return pointInPolygon(point,geometry.points??[]);if(annotation.annotation_type==='brush')return (geometry.strokes??[]).some((stroke:{size:number;points:Point[]})=>strokeHit(point,stroke.points??[],Math.max(2,Number(stroke.size)/2)));return false}
+function drawBoundingBoxPreview(context: CanvasRenderingContext2D, start: Point, end: Point, transform: ViewTransform, color: string) {
+  const rectangle = rectangleFromPoints(start, end)
+  const screen = sourceToScreen({ x: rectangle.x, y: rectangle.y }, transform)
+  context.save()
+  context.strokeStyle = color
+  context.fillStyle = `${color}2e`
+  context.lineWidth = 2
+  context.setLineDash([7, 4])
+  context.fillRect(screen.x, screen.y, rectangle.width * transform.scale, rectangle.height * transform.scale)
+  context.strokeRect(screen.x, screen.y, rectangle.width * transform.scale, rectangle.height * transform.scale)
+  context.restore()
+}
 
-function pointInPolygon(point:Point,points:Point[]):boolean{if(points.length<3)return false;let inside=false;for(let index=0,previous=points.length-1;index<points.length;previous=index++){const current=points[index],before=points[previous];const crosses=(current.y>point.y)!==(before.y>point.y)&&point.x<(before.x-current.x)*(point.y-current.y)/(before.y-current.y)+current.x;if(crosses)inside=!inside}return inside}
+function drawPolygonPreview(context: CanvasRenderingContext2D, points: Point[], hoverPoint: Point | null, transform: ViewTransform, color: string) {
+  const preview = hoverPoint ? appendDistinctPoint(points, hoverPoint) : points
+  context.save()
+  context.strokeStyle = color
+  context.fillStyle = `${color}24`
+  context.lineWidth = 2
+  context.setLineDash([6, 3])
+  drawScreenPath(context, preview, transform, preview.length >= 3)
+  if (preview.length >= 3) context.fill()
+  context.stroke()
+  context.setLineDash([])
+  context.fillStyle = color
+  for (const point of points) {
+    const screen = sourceToScreen(point, transform)
+    context.beginPath()
+    context.arc(screen.x, screen.y, 3.5, 0, Math.PI * 2)
+    context.fill()
+  }
+  context.restore()
+}
 
-function strokeHit(point:Point,points:Point[],radius:number):boolean{if(!points.length)return false;if(points.length===1)return distance(point,points[0])<=radius;for(let index=1;index<points.length;index++)if(distanceToSegment(point,points[index-1],points[index])<=radius)return true;return false}
+function drawBrushPreview(context: CanvasRenderingContext2D, points: Point[], size: number, transform: ViewTransform, color: string) {
+  context.save()
+  context.strokeStyle = color
+  context.fillStyle = color
+  context.globalAlpha = .78
+  context.lineWidth = size * transform.scale
+  drawBrushStroke(context, points, transform)
+  context.restore()
+}
 
-function distance(a:Point,b:Point):number{return Math.hypot(a.x-b.x,a.y-b.y)}
+function drawRoundCursor(context: CanvasRenderingContext2D, point: Point, size: number, transform: ViewTransform, color: string) {
+  const screen = sourceToScreen(point, transform)
+  const radius = Math.max(2, size * transform.scale / 2)
+  context.save()
+  context.beginPath()
+  context.arc(screen.x, screen.y, radius, 0, Math.PI * 2)
+  context.fillStyle = `${color}20`
+  context.fill()
+  context.strokeStyle = '#ffffff'
+  context.lineWidth = 3
+  context.stroke()
+  context.strokeStyle = color
+  context.lineWidth = 1.5
+  context.stroke()
+  context.restore()
+}
 
-function distanceToSegment(point:Point,start:Point,end:Point):number{const dx=end.x-start.x,dy=end.y-start.y;if(dx===0&&dy===0)return distance(point,start);const ratio=Math.max(0,Math.min(1,((point.x-start.x)*dx+(point.y-start.y)*dy)/(dx*dx+dy*dy)));return distance(point,{x:start.x+ratio*dx,y:start.y+ratio*dy})}
+function drawScreenPath(context: CanvasRenderingContext2D, points: Point[], transform: ViewTransform, close: boolean) {
+  context.beginPath()
+  points.forEach((point, index) => {
+    const screen = sourceToScreen(point, transform)
+    if (index) context.lineTo(screen.x, screen.y)
+    else context.moveTo(screen.x, screen.y)
+  })
+  if (close) context.closePath()
+}
+
+function drawBrushStroke(context: CanvasRenderingContext2D, points: Point[], transform: ViewTransform) {
+  if (!points.length) return
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  if (points.length === 1) {
+    const screen = sourceToScreen(points[0], transform)
+    context.beginPath()
+    context.arc(screen.x, screen.y, context.lineWidth / 2, 0, Math.PI * 2)
+    context.fill()
+    return
+  }
+  drawScreenPath(context, points, transform, false)
+  context.stroke()
+}
+
+export function rectangleFromPoints(start: Point, end: Point) {
+  return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) }
+}
+
+export function eraseBrushAnnotations(annotations: Annotation[], center: Point, eraserRadius: number): Annotation[] {
+  let changed = false
+  const next: Annotation[] = []
+  for (const annotation of annotations) {
+    if (annotation.annotation_type !== 'brush') {
+      next.push(annotation)
+      continue
+    }
+    const geometry = annotation.geometry_json as { strokes?: BrushStroke[] }
+    let brushChanged = false
+    const strokes: BrushStroke[] = []
+    for (const stroke of geometry.strokes ?? []) {
+      const threshold = eraserRadius + Math.max(0, Number(stroke.size)) / 2
+      if (!strokeHit(center, stroke.points ?? [], threshold)) {
+        strokes.push(stroke)
+        continue
+      }
+      brushChanged = true
+      strokes.push(...splitStrokeOutsideCircle(stroke, center, threshold))
+    }
+    if (!brushChanged) {
+      next.push(annotation)
+      continue
+    }
+    changed = true
+    if (strokes.length) next.push({ ...annotation, geometry_json: { ...geometry, strokes } })
+  }
+  return changed ? next : annotations
+}
+
+function splitStrokeOutsideCircle(stroke: BrushStroke, center: Point, radius: number): BrushStroke[] {
+  const densePoints = densifyPoints(stroke.points ?? [], Math.max(1, Math.min(Math.max(stroke.size, 1) / 3, Math.max(radius, 1) / 2)))
+  const runs: BrushStroke[] = []
+  let current: Point[] = []
+  for (const point of densePoints) {
+    if (distance(point, center) > radius) {
+      current.push(point)
+    } else if (current.length) {
+      runs.push({ size: stroke.size, points: current })
+      current = []
+    }
+  }
+  if (current.length) runs.push({ size: stroke.size, points: current })
+  return runs
+}
+
+function densifyPoints(points: Point[], step: number): Point[] {
+  if (points.length < 2) return [...points]
+  const dense: Point[] = [{ ...points[0] }]
+  for (let index = 1; index < points.length; index++) {
+    const start = points[index - 1]
+    const end = points[index]
+    const segments = Math.max(1, Math.ceil(distance(start, end) / step))
+    for (let part = 1; part <= segments; part++) {
+      const ratio = part / segments
+      dense.push({ x: start.x + (end.x - start.x) * ratio, y: start.y + (end.y - start.y) * ratio })
+    }
+  }
+  return dense
+}
+
+function appendDistinctPoint(points: Point[], point: Point): Point[] {
+  const last = points.at(-1)
+  return last && distance(last, point) < .25 ? points : [...points, point]
+}
+
+export function hitTestAnnotation(annotation: Annotation, point: Point): boolean {
+  const geometry = annotation.geometry_json as any
+  if (annotation.annotation_type === 'bbox') return point.x >= geometry.x && point.x <= geometry.x + geometry.width && point.y >= geometry.y && point.y <= geometry.y + geometry.height
+  if (annotation.annotation_type === 'polygon') return pointInPolygon(point, geometry.points ?? [])
+  if (annotation.annotation_type === 'brush') return (geometry.strokes ?? []).some((stroke: BrushStroke) => strokeHit(point, stroke.points ?? [], Math.max(2, Number(stroke.size) / 2)))
+  return false
+}
+
+function pointInPolygon(point: Point, points: Point[]): boolean {
+  if (points.length < 3) return false
+  let inside = false
+  for (let index = 0, previous = points.length - 1; index < points.length; previous = index++) {
+    const current = points[index]
+    const before = points[previous]
+    const crosses = (current.y > point.y) !== (before.y > point.y) && point.x < (before.x - current.x) * (point.y - current.y) / (before.y - current.y) + current.x
+    if (crosses) inside = !inside
+  }
+  return inside
+}
+
+function strokeHit(point: Point, points: Point[], radius: number): boolean {
+  if (!points.length) return false
+  if (points.length === 1) return distance(point, points[0]) <= radius
+  for (let index = 1; index < points.length; index++) if (distanceToSegment(point, points[index - 1], points[index]) <= radius) return true
+  return false
+}
+
+function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y) }
+
+function distanceToSegment(point: Point, start: Point, end: Point): number {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  if (dx === 0 && dy === 0) return distance(point, start)
+  const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)))
+  return distance(point, { x: start.x + ratio * dx, y: start.y + ratio * dy })
+}
+
+function toolName(tool: Tool): string {
+  return { pan: '이동', bbox: '박스', polygon: '폴리곤', brush: '브러시', eraser: '지우개' }[tool]
+}

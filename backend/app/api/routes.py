@@ -127,6 +127,10 @@ def thumbnail(asset_id: str, db: Session = Depends(get_db), settings: Settings =
 def create_task(project_id: str, payload: TaskCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).create_task(actor, project_id, payload)
 
 
+@router.post("/projects/{project_id}/tasks/batch", response_model=list[TaskOut], status_code=201)
+def create_tasks(project_id: str, payload: TaskBatchCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).create_tasks(actor, project_id, payload)
+
+
 @router.get("/tasks/my", response_model=list[TaskOut])
 def my_tasks(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return AnnotationService(db, settings).my_tasks(actor)
 

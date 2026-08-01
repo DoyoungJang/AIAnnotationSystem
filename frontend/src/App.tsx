@@ -27,7 +27,7 @@ export default function App() {
     }
   }, [error])
 
-  if (!authenticated || !user) return <Login onLogin={() => setAuthenticated(true)} />
+  if (!authenticated || !user) return <Login onLogin={() => { setPage('dashboard'); setOpenTask(undefined); setAuthenticated(true) }} />
   if (openTask) return <TaskWorkspace initialTask={openTask} user={user} onClose={() => setOpenTask(undefined)} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} />
 
   const refresh = () => {
@@ -40,9 +40,9 @@ export default function App() {
     setPage(next)
   }
 
-  return <Layout user={user} page={page} onPage={changePage} onLogout={() => { setToken(null); queryClient.clear(); setAuthenticated(false) }}>
+  return <Layout user={user} page={page} onPage={changePage} onLogout={() => { setToken(null); queryClient.clear(); setPage('dashboard'); setOpenTask(undefined); setAuthenticated(false) }}>
     {page === 'dashboard' && <Dashboard user={user} projects={projects} tasks={tasks} />}
-    {page === 'admin' && isManager && <Admin actor={user} projects={projects} users={users} onRefresh={refresh} />}
+    {page === 'admin' && isManager && <Admin actor={user} projects={projects} tasks={tasks} users={users} onRefresh={refresh} />}
     {page === 'tasks' && <Tasks tasks={tasks} onOpen={setOpenTask} />}
     {page === 'review' && <Tasks tasks={tasks} onOpen={setOpenTask} review />}
   </Layout>

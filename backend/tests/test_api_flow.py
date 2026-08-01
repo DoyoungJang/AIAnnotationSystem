@@ -53,9 +53,23 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert client.get(f"/api/v1/projects/{private_project.json()['id']}", headers=manager_headers).status_code == 403
     schema = client.post(f"/api/v1/projects/{project_id}/label-schemas", headers=headers, json={"status":"PUBLISHED","labels":[{"label_code":"HEAD","label_name":"Head","annotation_type":"bbox","color":"#00AEEF","required":True}]})
     assert schema.status_code == 201 and schema.json()["schema_json"]["labels"][0]["label_code"] == "HEAD"
-    content = BytesIO(); Image.new("L", (128, 96), 70).save(content, "PNG")
-    imported = client.post(f"/api/v1/projects/{project_id}/datasets/import", headers=headers, data={"dataset_name":"Synthetic"}, files={"files":("sample.png",content.getvalue(),"image/png")})
-    assert imported.status_code == 201 and len(imported.json()["assets"]) == 1
-    asset_id = imported.json()["assets"][0]["id"]
+    manager_schema = client.post(f"/api/v1/projects/{project_id}/label-schemas", headers=manager_headers, json={"status":"PUBLISHED","labels":[{"label_code":"HEAD","label_name":"Head","annotation_type":"bbox","color":"#00AEEF","required":True},{"label_code":"LESION_BORDER","label_name":"Lesion border","annotation_type":"polygon","color":"#35D4BD","required":False,"shortcut":"5"}]})
+    assert manager_schema.status_code == 201
+    assert manager_schema.json()["version"] == 2
+    assert manager_schema.json()["schema_json"]["labels"][1]["label_code"] == "LESION_BORDER"
+    files = []
+    for index, shade in enumerate((70, 90, 110), start=1):
+        content = BytesIO(); Image.new("L", (128, 96), shade).save(content, "PNG")
+        files.append(("files", (f"sample-{index}.png", content.getvalue(), "image/png")))
+    imported = client.post(f"/api/v1/projects/{project_id}/datasets/import", headers=headers, data={"dataset_name":"Synthetic"}, files=files)
+    assert imported.status_code == 201 and len(imported.json()["assets"]) == 3
+    asset_ids = [asset["id"] for asset in imported.json()["assets"]]
+    asset_id = asset_ids[0]
     task = client.post(f"/api/v1/projects/{project_id}/tasks", headers=headers, json={"media_asset_id":asset_id,"assigned_to":user_id,"priority":50})
     assert task.status_code == 201
+    batch = client.post(f"/api/v1/projects/{project_id}/tasks/batch", headers=headers, json={"media_asset_ids":asset_ids[1:],"assigned_to":annotator.json()["id"],"reviewer_id":user_id,"priority":60})
+    assert batch.status_code == 201
+    assert {task["media_asset_id"] for task in batch.json()} == set(asset_ids[1:])
+    assert all(task["status"] == "ASSIGNED" and task["priority"] == 60 for task in batch.json())
+    duplicate_batch = client.post(f"/api/v1/projects/{project_id}/tasks/batch", headers=headers, json={"media_asset_ids":[asset_ids[1],asset_ids[1]],"assigned_to":annotator.json()["id"]})
+    assert duplicate_batch.status_code == 422

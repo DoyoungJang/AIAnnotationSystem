@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskCreate, UserCreate
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskBatchCreate, TaskCreate, UserCreate
 from app.services.audit_service import AuditService
 
 
@@ -121,32 +121,54 @@ class ProjectService:
         self.get_project(actor, project_id)
         return list(self.db.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id).order_by(LabelSchemaVersion.version.desc())).all())
 
-    def create_task(self, actor: User, project_id: str, payload: TaskCreate) -> AnnotationTask:
+    def _prepare_assignment(self, actor: User, project_id: str, assigned_to: str | None, reviewer_id: str | None) -> None:
         self.get_project(actor, project_id)
         if actor.role not in MANAGE_ROLES:
             raise HTTPException(403, "작업 배정 권한이 없습니다.")
+        assignee = self.db.get(User, assigned_to) if assigned_to else None
+        reviewer = self.db.get(User, reviewer_id) if reviewer_id else None
+        if assigned_to and (assignee is None or assignee.role not in {Role.ANNOTATOR, Role.ADMINISTRATOR}):
+            raise HTTPException(422, "라벨러 역할의 사용자만 작업자로 배정할 수 있습니다.")
+        if reviewer_id and (reviewer is None or reviewer.role not in {Role.REVIEWER, Role.ADMINISTRATOR}):
+            raise HTTPException(422, "검수자 역할의 사용자만 검수자로 배정할 수 있습니다.")
+        for user in (assignee, reviewer):
+            if user is None or user.role == Role.ADMINISTRATOR:
+                continue
+            member = self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == user.id))
+            if member is None:
+                self.db.add(ProjectMember(project_id=project_id, user_id=user.id, project_role=user.role))
+
+    def _build_task(self, project_id: str, payload: TaskCreate) -> AnnotationTask:
         asset = self.db.get(MediaAsset, payload.media_asset_id)
         if asset is None:
             raise HTTPException(404, "영상을 찾을 수 없습니다.")
         dataset = self.db.get(Dataset, asset.dataset_id)
         if dataset is None or dataset.project_id != project_id:
             raise HTTPException(422, "선택한 영상이 이 프로젝트에 속하지 않습니다.")
-        assignee = self.db.get(User, payload.assigned_to) if payload.assigned_to else None
-        reviewer = self.db.get(User, payload.reviewer_id) if payload.reviewer_id else None
-        if payload.assigned_to and (assignee is None or assignee.role not in {Role.ANNOTATOR, Role.ADMINISTRATOR}):
-            raise HTTPException(422, "라벨러 역할의 사용자만 작업자로 배정할 수 있습니다.")
-        if payload.reviewer_id and (reviewer is None or reviewer.role not in {Role.REVIEWER, Role.ADMINISTRATOR}):
-            raise HTTPException(422, "검수자 역할의 사용자만 검수자로 배정할 수 있습니다.")
         task = AnnotationTask(project_id=project_id, media_asset_id=asset.id, assigned_to=payload.assigned_to, reviewer_id=payload.reviewer_id, priority=payload.priority, status=TaskStatus.ASSIGNED if payload.assigned_to else TaskStatus.UNASSIGNED)
         self.db.add(task)
-        for user_id in {payload.assigned_to, payload.reviewer_id} - {None}:
-            member = self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == user_id))
-            user = self.db.get(User, user_id)
-            if user is None:
-                raise HTTPException(422, "배정할 사용자를 찾을 수 없습니다.")
-            if member is None and user.role != Role.ADMINISTRATOR:
-                self.db.add(ProjectMember(project_id=project_id, user_id=user.id, project_role=user.role))
+        return task
+
+    def create_task(self, actor: User, project_id: str, payload: TaskCreate) -> AnnotationTask:
+        self._prepare_assignment(actor, project_id, payload.assigned_to, payload.reviewer_id)
+        task = self._build_task(project_id, payload)
         self.db.flush()
         self.audit.record(actor, "TASK_CREATED", "task", task.id, project_id, "Annotation task created")
         self.db.commit()
         return task
+
+    def create_tasks(self, actor: User, project_id: str, payload: TaskBatchCreate) -> list[AnnotationTask]:
+        self._prepare_assignment(actor, project_id, payload.assigned_to, payload.reviewer_id)
+        tasks: list[AnnotationTask] = []
+        for asset_id in payload.media_asset_ids:
+            task = self._build_task(project_id, TaskCreate(
+                media_asset_id=asset_id,
+                assigned_to=payload.assigned_to,
+                reviewer_id=payload.reviewer_id,
+                priority=payload.priority,
+            ))
+            self.db.flush()
+            self.audit.record(actor, "TASK_CREATED", "task", task.id, project_id, "Annotation task created by batch assignment")
+            tasks.append(task)
+        self.db.commit()
+        return tasks

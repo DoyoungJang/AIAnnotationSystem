@@ -137,6 +137,20 @@ class TaskCreate(BaseModel):
     priority: int = Field(default=0, ge=0, le=100)
 
 
+class TaskBatchCreate(BaseModel):
+    media_asset_ids: list[str] = Field(min_length=1, max_length=1000)
+    assigned_to: str | None = None
+    reviewer_id: str | None = None
+    priority: int = Field(default=0, ge=0, le=100)
+
+    @field_validator("media_asset_ids")
+    @classmethod
+    def unique_asset_ids(cls, asset_ids: list[str]) -> list[str]:
+        if len(asset_ids) != len(set(asset_ids)):
+            raise ValueError("media_asset_ids must be unique")
+        return asset_ids
+
+
 class TaskOut(ORMModel):
     id: str
     project_id: str
