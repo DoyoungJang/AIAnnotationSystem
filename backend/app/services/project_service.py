@@ -4,8 +4,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models.entities import AnnotationTask, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, TaskCreate, UserCreate
+from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskCreate, UserCreate
 from app.services.audit_service import AuditService
 
 
@@ -30,6 +30,55 @@ class ProjectService:
         self.audit.record(actor, "USER_CREATED", "user", user.id, None, "User account created")
         self.db.commit()
         return user
+
+    def list_members(self, actor: User, project_id: str) -> list[dict]:
+        self.get_project(actor, project_id)
+        if actor.role not in MANAGE_ROLES:
+            raise HTTPException(403, "프로젝트 멤버를 조회할 권한이 없습니다.")
+        rows = self.db.execute(
+            select(ProjectMember, User)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(ProjectMember.project_id == project_id)
+            .order_by(User.display_name)
+        ).all()
+        return [{
+            "id": member.id,
+            "project_id": member.project_id,
+            "user_id": user.id,
+            "project_role": member.project_role,
+            "username": user.username,
+            "display_name": user.display_name,
+        } for member, user in rows]
+
+    def add_member(self, actor: User, project_id: str, payload: ProjectMemberCreate) -> dict:
+        self.get_project(actor, project_id)
+        if actor.role not in MANAGE_ROLES:
+            raise HTTPException(403, "프로젝트 멤버를 지정할 권한이 없습니다.")
+        user = self.db.get(User, payload.user_id)
+        if user is None or user.status != "ACTIVE":
+            raise HTTPException(404, "활성 사용자를 찾을 수 없습니다.")
+        if user.role == Role.ADMINISTRATOR:
+            raise HTTPException(422, "Sudo 관리자는 프로젝트 멤버로 지정할 필요가 없습니다.")
+        if actor.role == Role.PROJECT_MANAGER and user.role == Role.PROJECT_MANAGER:
+            raise HTTPException(403, "프로젝트 관리자는 다른 관리자를 지정할 수 없습니다.")
+        member = self.db.scalar(select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user.id,
+        ))
+        if member is None:
+            member = ProjectMember(project_id=project_id, user_id=user.id, project_role=user.role)
+            self.db.add(member)
+            self.db.flush()
+            self.audit.record(actor, "PROJECT_MEMBER_ADDED", "project_member", member.id, project_id, f"Added {user.username} as {user.role.value}")
+            self.db.commit()
+        return {
+            "id": member.id,
+            "project_id": member.project_id,
+            "user_id": user.id,
+            "project_role": member.project_role,
+            "username": user.username,
+            "display_name": user.display_name,
+        }
 
     def list_projects(self, actor: User) -> list[Project]:
         query = select(Project).order_by(Project.updated_at.desc())
@@ -79,6 +128,15 @@ class ProjectService:
         asset = self.db.get(MediaAsset, payload.media_asset_id)
         if asset is None:
             raise HTTPException(404, "영상을 찾을 수 없습니다.")
+        dataset = self.db.get(Dataset, asset.dataset_id)
+        if dataset is None or dataset.project_id != project_id:
+            raise HTTPException(422, "선택한 영상이 이 프로젝트에 속하지 않습니다.")
+        assignee = self.db.get(User, payload.assigned_to) if payload.assigned_to else None
+        reviewer = self.db.get(User, payload.reviewer_id) if payload.reviewer_id else None
+        if payload.assigned_to and (assignee is None or assignee.role not in {Role.ANNOTATOR, Role.ADMINISTRATOR}):
+            raise HTTPException(422, "라벨러 역할의 사용자만 작업자로 배정할 수 있습니다.")
+        if payload.reviewer_id and (reviewer is None or reviewer.role not in {Role.REVIEWER, Role.ADMINISTRATOR}):
+            raise HTTPException(422, "검수자 역할의 사용자만 검수자로 배정할 수 있습니다.")
         task = AnnotationTask(project_id=project_id, media_asset_id=asset.id, assigned_to=payload.assigned_to, reviewer_id=payload.reviewer_id, priority=payload.priority, status=TaskStatus.ASSIGNED if payload.assigned_to else TaskStatus.UNASSIGNED)
         self.db.add(task)
         for user_id in {payload.assigned_to, payload.reviewer_id} - {None}:
@@ -86,7 +144,7 @@ class ProjectService:
             user = self.db.get(User, user_id)
             if user is None:
                 raise HTTPException(422, "배정할 사용자를 찾을 수 없습니다.")
-            if member is None:
+            if member is None and user.role != Role.ADMINISTRATOR:
                 self.db.add(ProjectMember(project_id=project_id, user_id=user.id, project_role=user.role))
         self.db.flush()
         self.audit.record(actor, "TASK_CREATED", "task", task.id, project_id, "Annotation task created")

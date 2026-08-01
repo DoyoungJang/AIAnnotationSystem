@@ -36,6 +36,19 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class ProjectMemberCreate(BaseModel):
+    user_id: str
+
+
+class ProjectMemberOut(BaseModel):
+    id: str
+    project_id: str
+    user_id: str
+    project_role: Role
+    username: str
+    display_name: str
+
+
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=4000)

@@ -3,6 +3,8 @@ export type TaskStatus='UNASSIGNED'|'ASSIGNED'|'IN_PROGRESS'|'DRAFT'|'SUBMITTED'
 export type Tool='pan'|'bbox'|'polygon'|'brush'|'eraser'
 export interface User{id:string;username:string;display_name:string;role:Role;status:string}
 export interface Project{id:string;name:string;description:string;task_types:string[];status:string;created_at:string;updated_at:string;created_by:string}
+export interface ProjectMember{id:string;project_id:string;user_id:string;project_role:Role;username:string;display_name:string}
+export interface Dataset{id:string;project_id:string;name:string;version:number;storage_type:string;manifest_hash:string|null;created_at:string}
 export interface Label{label_code:string;label_name:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';color:string;required:boolean;shortcut?:string}
 export interface Schema{id:string;project_id:string;version:number;schema_json:{labels:Label[]};status:string;created_at:string;created_by:string}
 export interface Asset{id:string;dataset_id:string;series_id:string;media_type:string;original_filename:string;width:number;height:number;frame_count:number;checksum:string;quality_status:string;phi_suspected:boolean}

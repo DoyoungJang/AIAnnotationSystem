@@ -49,7 +49,10 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
 
 @router.get("/users", response_model=list[UserOut])
 def users(db: Session = Depends(get_db), actor: User = Depends(require_roles(Role.ADMINISTRATOR, Role.PROJECT_MANAGER))) -> list[User]:
-    return list(db.scalars(select(User).order_by(User.display_name)).all())
+    query = select(User).order_by(User.display_name)
+    if actor.role == Role.PROJECT_MANAGER:
+        query = query.where(User.role.in_([Role.ANNOTATOR, Role.REVIEWER, Role.OBSERVER]))
+    return list(db.scalars(query).all())
 
 
 @router.get("/projects", response_model=list[ProjectOut])
@@ -62,6 +65,16 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), actor:
 
 @router.get("/projects/{project_id}", response_model=ProjectOut)
 def project(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).get_project(actor, project_id)
+
+
+@router.get("/projects/{project_id}/members", response_model=list[ProjectMemberOut])
+def project_members(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return ProjectService(db).list_members(actor, project_id)
+
+
+@router.post("/projects/{project_id}/members", response_model=ProjectMemberOut, status_code=201)
+def add_project_member(project_id: str, payload: ProjectMemberCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return ProjectService(db).add_member(actor, project_id, payload)
 
 
 @router.post("/projects/{project_id}/label-schemas", response_model=LabelSchemaOut, status_code=201)

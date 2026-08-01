@@ -1,0 +1,18 @@
+.admin-tabs { display: flex; gap: 8px; margin: -12px 0 22px; }
+.admin-tabs button.active { border-color: var(--teal); background: #17322f; color: #8ef3e4; }
+.admin-user-layout { display: grid; grid-template-columns: minmax(340px, .8fr) minmax(480px, 1.2fr); gap: 18px; }
+.admin-form { display: flex; flex-direction: column; gap: 14px; }
+.admin-form label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 700; }
+.admin-form button { margin-top: 6px; }
+.user-list { display: flex; flex-direction: column; }
+.user-row { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid #162a35; }
+.user-row .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #19433f; color: #98f4e7; font-weight: 700; }
+.user-row div { display: flex; flex-direction: column; }
+.user-row small { color: var(--muted); margin-top: 3px; }
+.role-badge { font-size: 10px; padding: 6px 9px; border-radius: 14px; background: #172a35; color: #a9c0ca; }
+.role-administrator { background: #3b2027; color: #ffadba; }
+.role-project_manager { background: #322c17; color: #f7cd70; }
+.member-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.member-chips > span { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #0c1b25; padding: 7px 10px; border-radius: 18px; font-size: 12px; }
+.member-chips small { font: 500 8px 'DM Mono'; color: var(--teal); }
+.member-assign { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
