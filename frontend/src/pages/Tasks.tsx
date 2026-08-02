@@ -1,5 +1,82 @@
-import { ArrowRight, LockKeyhole } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, ChevronDown, ChevronRight, FileImage, Folder, LockKeyhole } from 'lucide-react'
 import type { Task } from '../types'
 import { Status } from './Dashboard'
 
-export function Tasks({tasks,onOpen,review=false}:{tasks:Task[];onOpen:(task:Task)=>void;review?:boolean}){const visible=review?tasks.filter(t=>['SUBMITTED','IN_REVIEW'].includes(t.status)):tasks;return <><header className="page-header"><div><span className="eyebrow">{review?'QUALITY REVIEW':'ANNOTATION QUEUE'}</span><h1>{review?'검수 대기열':'내 작업'}</h1><p>{review?'제출된 라벨을 확인하고 승인 또는 수정 요청합니다.':'배정된 영상을 열어 라벨링을 시작하세요.'}</p></div></header><section className="task-grid">{visible.map(task=><button className="task-card" key={task.id} onClick={()=>onOpen(task)}><div><span className="mono">TASK {task.id.slice(0,8)}</span><Status status={task.status}/></div><div className="task-image"><LockKeyhole/><span>보호된 의료영상</span></div><footer><span>Priority {task.priority} · Version {task.aggregate_version}</span><ArrowRight/></footer></button>)}{!visible.length&&<div className="empty panel">표시할 작업이 없습니다.</div>}</section></>}
+export interface TaskFolderNode { name: string; path: string; tasks: Task[]; children: TaskFolderNode[] }
+
+export function Tasks({ tasks, onOpen, review = false }: { tasks: Task[]; onOpen: (task: Task) => void; review?: boolean }) {
+  const visible = useMemo(() => review ? tasks.filter(task => ['SUBMITTED', 'IN_REVIEW'].includes(task.status)) : tasks, [review, tasks])
+  const projectTrees = useMemo(() => buildTaskProjectTrees(visible), [visible])
+  const [expandedFolders, setExpandedFolders] = useState<string[]>([])
+
+  useEffect(() => {
+    setExpandedFolders(current => [...new Set([...current, ...projectTrees.map(tree => tree.path)])])
+  }, [projectTrees])
+
+  const expanded = useMemo(() => new Set(expandedFolders), [expandedFolders])
+  const toggleFolder = (path: string) => setExpandedFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
+
+  return <>
+    <header className="page-header"><div><span className="eyebrow">{review ? 'QUALITY REVIEW' : 'ANNOTATION QUEUE'}</span><h1>{review ? '검수 대기열' : '내 작업'}</h1><p>{review ? '제출된 라벨을 확인하고 승인 또는 수정 요청합니다.' : '프로젝트와 폴더를 열어 배정된 영상을 확인하고 라벨링을 시작하세요.'}</p></div></header>
+    {projectTrees.length ? <section className="task-folder-list">{projectTrees.map(tree => <TaskFolderTree key={tree.path} node={tree} depth={0} expanded={expanded} onToggle={toggleFolder} onOpen={onOpen} />)}</section> : <div className="empty panel">표시할 작업이 없습니다.</div>}
+  </>
+}
+
+function TaskFolderTree({ node, depth, expanded, onToggle, onOpen }: { node: TaskFolderNode; depth: number; expanded: Set<string>; onToggle: (path: string) => void; onOpen: (task: Task) => void }) {
+  const open = expanded.has(node.path)
+  const allTasks = collectFolderTasks(node)
+  return <section className={`task-folder-node ${depth === 0 ? 'project-root' : ''}`}>
+    <button className="task-folder-header" onClick={() => onToggle(node.path)} aria-expanded={open} aria-label={`${node.name} 폴더 ${open ? '접기' : '열기'}`} style={{ paddingLeft: `${14 + depth * 18}px` }}>
+      {open ? <ChevronDown /> : <ChevronRight />}<Folder /><span><strong>{node.name}</strong><small>{allTasks.length}개 작업{node.children.length ? ` · 하위 폴더 ${node.children.length}개` : ''}</small></span>
+    </button>
+    {open && <div className="task-folder-contents">
+      {node.tasks.length > 0 && <div className="task-grid folder-task-grid">{node.tasks.map(task => <TaskCard task={task} onOpen={onOpen} key={task.id} />)}</div>}
+      {node.children.map(child => <TaskFolderTree node={child} depth={depth + 1} expanded={expanded} onToggle={onToggle} onOpen={onOpen} key={child.path} />)}
+    </div>}
+  </section>
+}
+
+function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
+  const filename = task.media_asset_original_filename || task.media_asset_relative_path?.split('/').at(-1) || '보호된 의료영상'
+  return <button className="task-card" onClick={() => onOpen(task)}><div><span className="mono">TASK {task.id.slice(0, 8)}</span><Status status={task.status} /></div><div className="task-image"><LockKeyhole /><FileImage /><strong title={task.media_asset_relative_path}>{filename}</strong><span>보호된 의료영상</span></div><footer><span>Priority {task.priority} · Version {task.aggregate_version}</span><ArrowRight /></footer></button>
+}
+
+export function buildTaskProjectTrees(tasks: Task[]): TaskFolderNode[] {
+  const projects = new Map<string, Task[]>()
+  tasks.forEach(task => projects.set(task.project_id, [...(projects.get(task.project_id) ?? []), task]))
+  return [...projects.entries()].map(([projectId, projectTasks]) => buildTaskFolderTree(projectTasks, projectTasks[0]?.project_name || `프로젝트 ${projectId.slice(0, 8)}`))
+    .sort((left, right) => left.name.localeCompare(right.name, 'ko'))
+}
+
+export function buildTaskFolderTree(tasks: Task[], projectName: string): TaskFolderNode {
+  type MutableNode = TaskFolderNode & { childMap: Map<string, MutableNode> }
+  const projectId = tasks[0]?.project_id || 'unknown'
+  const root: MutableNode = { name: projectName, path: `project:${projectId}`, tasks: [], children: [], childMap: new Map() }
+  for (const task of tasks) {
+    const relativePath = task.media_asset_relative_path || task.media_asset_original_filename || task.media_asset_id
+    const folders = relativePath.split('/').slice(0, -1).filter(Boolean)
+    let current = root
+    for (const folderName of folders) {
+      let child = current.childMap.get(folderName)
+      if (!child) {
+        child = { name: folderName, path: `${current.path}/${folderName}`, tasks: [], children: [], childMap: new Map() }
+        current.childMap.set(folderName, child)
+        current.children.push(child)
+      }
+      current = child
+    }
+    current.tasks.push(task)
+  }
+  const sortNode = (node: MutableNode) => {
+    node.tasks.sort((left, right) => (left.media_asset_relative_path || left.media_asset_id).localeCompare(right.media_asset_relative_path || right.media_asset_id, 'ko'))
+    node.children.sort((left, right) => left.name.localeCompare(right.name, 'ko'))
+    node.children.forEach(child => sortNode(child as MutableNode))
+  }
+  sortNode(root)
+  return root
+}
+
+export function collectFolderTasks(node: TaskFolderNode): Task[] {
+  return [...node.tasks, ...node.children.flatMap(collectFolderTasks)]
+}

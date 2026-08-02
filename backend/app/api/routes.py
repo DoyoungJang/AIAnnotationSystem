@@ -157,7 +157,7 @@ def create_task(project_id: str, payload: TaskCreate, db: Session = Depends(get_
 def create_tasks(project_id: str, payload: TaskBatchCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).create_tasks(actor, project_id, payload)
 
 
-@router.get("/tasks/my", response_model=list[TaskOut])
+@router.get("/tasks/my", response_model=list[TaskListOut])
 def my_tasks(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return AnnotationService(db, settings).my_tasks(actor)
 
 

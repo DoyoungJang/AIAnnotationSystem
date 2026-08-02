@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.annotations.handlers import AnnotationHandlerRegistry
 from app.core.config import Settings
-from app.models.entities import Annotation, AnnotationTask, AnnotationVersion, IdempotencyRecord, Role, TaskStatus, User
-from app.schemas.api import AnnotationSaveRequest
+from app.models.entities import Annotation, AnnotationTask, AnnotationVersion, IdempotencyRecord, MediaAsset, Project, Role, TaskStatus, User
+from app.schemas.api import AnnotationSaveRequest, TaskListOut, TaskOut
 from app.services.audit_service import AuditService
 
 
@@ -35,13 +35,26 @@ class AnnotationService:
             raise HTTPException(403, "이 작업을 수정할 권한이 없습니다.")
         return task
 
-    def my_tasks(self, actor: User) -> list[AnnotationTask]:
-        query = select(AnnotationTask).order_by(AnnotationTask.priority.desc(), AnnotationTask.updated_at.desc())
+    def my_tasks(self, actor: User) -> list[TaskListOut]:
+        query = (
+            select(AnnotationTask, Project.name, MediaAsset.original_filename, MediaAsset.relative_path)
+            .join(Project, Project.id == AnnotationTask.project_id)
+            .join(MediaAsset, MediaAsset.id == AnnotationTask.media_asset_id)
+            .order_by(AnnotationTask.priority.desc(), AnnotationTask.updated_at.desc())
+        )
         if actor.role == Role.ANNOTATOR:
             query = query.where(AnnotationTask.assigned_to == actor.id)
         elif actor.role == Role.REVIEWER:
             query = query.where(AnnotationTask.reviewer_id == actor.id)
-        return list(self.db.scalars(query).all())
+        return [
+            TaskListOut(
+                **TaskOut.model_validate(task).model_dump(),
+                project_name=project_name,
+                media_asset_original_filename=original_filename,
+                media_asset_relative_path=relative_path or original_filename,
+            )
+            for task, project_name, original_filename, relative_path in self.db.execute(query).all()
+        ]
 
     def acquire_lock(self, actor: User, task_id: str) -> AnnotationTask:
         task = self._task(actor, task_id, True)

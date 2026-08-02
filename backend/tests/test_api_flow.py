@@ -82,7 +82,7 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     for index, shade in enumerate((70, 90, 110), start=1):
         content = BytesIO(); Image.new("L", (128, 96), shade).save(content, "PNG")
         files.append(("files", (f"sample-{index}.png", content.getvalue(), "image/png")))
-    imported = client.post(f"/api/v1/projects/{project_id}/datasets/import", headers=headers, data={"dataset_name":"Synthetic"}, files=files)
+    imported = client.post(f"/api/v1/projects/{project_id}/datasets/import", headers=headers, data={"dataset_name":"Synthetic", "relative_paths":["Fetal US/trimester-1/sample-1.png", "Fetal US/trimester-1/sample-2.png", "Fetal US/trimester-2/sample-3.png"]}, files=files)
     assert imported.status_code == 201 and len(imported.json()["assets"]) == 3
     asset_ids = [asset["id"] for asset in imported.json()["assets"]]
     asset_id = asset_ids[0]
@@ -92,5 +92,10 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert batch.status_code == 201
     assert {task["media_asset_id"] for task in batch.json()} == set(asset_ids[1:])
     assert all(task["status"] == "ASSIGNED" and task["priority"] == 60 for task in batch.json())
+    annotator_tasks = client.get("/api/v1/tasks/my", headers=annotator_headers)
+    assert annotator_tasks.status_code == 200 and len(annotator_tasks.json()) == 2
+    assert {task["project_name"] for task in annotator_tasks.json()} == {"Fetal US"}
+    assert {task["media_asset_relative_path"] for task in annotator_tasks.json()} == {"Fetal US/trimester-1/sample-2.png", "Fetal US/trimester-2/sample-3.png"}
+    assert {task["media_asset_original_filename"] for task in annotator_tasks.json()} == {"sample-2.png", "sample-3.png"}
     duplicate_batch = client.post(f"/api/v1/projects/{project_id}/tasks/batch", headers=headers, json={"media_asset_ids":[asset_ids[1],asset_ids[1]],"assigned_to":annotator.json()["id"]})
     assert duplicate_batch.status_code == 422

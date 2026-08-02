@@ -195,6 +195,12 @@ class TaskOut(ORMModel):
     priority: int
 
 
+class TaskListOut(TaskOut):
+    project_name: str
+    media_asset_original_filename: str
+    media_asset_relative_path: str
+
+
 class Point(BaseModel):
     x: float
     y: float

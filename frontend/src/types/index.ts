@@ -10,7 +10,7 @@ export interface Schema{id:string;project_id:string;version:number;schema_json:{
 export interface LabelPresetNode{id:string;parent_id:string|null;node_type:'FOLDER'|'PRESET';name:string;labels:Label[];created_by:string;created_at:string;updated_at:string}
 export interface ExportJob{id:string;project_id:string;format:'csv'|'coco'|'yolo'|'mask';status:string;storage_key:string|null;error:string|null;created_by:string;created_at:string;completed_at:string|null}
 export interface Asset{id:string;dataset_id:string;series_id:string;media_type:string;original_filename:string;relative_path:string;width:number;height:number;frame_count:number;checksum:string;quality_status:string;phi_suspected:boolean}
-export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number}
+export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number;project_name?:string;media_asset_original_filename?:string;media_asset_relative_path?:string}
 export interface Point{x:number;y:number}
 export interface Annotation{id:string;task_id?:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';label_id:string;geometry_json:Record<string,unknown>;attributes_json:Record<string,unknown>;frame_index:number;source:string;model_version:string|null;confidence:number|null;current_version:number}
 export interface AnnotationResponse{aggregate_version:number;annotations:Annotation[]}
