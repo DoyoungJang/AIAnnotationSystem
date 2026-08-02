@@ -150,6 +150,7 @@ class MediaAsset(Base):
     storage_key: Mapped[str] = mapped_column(String(255), unique=True)
     media_type: Mapped[str] = mapped_column(String(40))
     original_filename: Mapped[str] = mapped_column(String(255))
+    relative_path: Mapped[str] = mapped_column(String(1000), default="")
     width: Mapped[int] = mapped_column(Integer)
     height: Mapped[int] = mapped_column(Integer)
     frame_count: Mapped[int] = mapped_column(Integer, default=1)

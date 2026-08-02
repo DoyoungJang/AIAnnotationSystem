@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Asset, LabelPresetNode } from '../types'
-import { canDeletePresetNode, childrenInPresetFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds } from './Projects'
+import { buildAssetFolderTree, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -19,6 +19,36 @@ describe('asset batch selection', () => {
 
   it('clears the selection', () => {
     expect(selectAssetIds(assets, 'none')).toEqual([])
+  })
+})
+
+describe('folder-preserving asset display', () => {
+  it('groups and sorts assets by their imported relative folder path', () => {
+    const nested = [
+      { id: 'two', original_filename: 'b.png', relative_path: 'Breast cancer/malignant/b.png' },
+      { id: 'one', original_filename: 'a.png', relative_path: 'Breast cancer/benign/a.png' },
+      { id: 'root', original_filename: 'root.png', relative_path: 'root.png' },
+    ] as Asset[]
+    expect(groupAssetsByFolder(nested).map(group => [group.path, group.assets.map(asset => asset.id)])).toEqual([
+      ['최상위 폴더', ['root']],
+      ['Breast cancer/benign', ['one']],
+      ['Breast cancer/malignant', ['two']],
+    ])
+  })
+
+  it('builds a navigable hierarchy and selects every available descendant', () => {
+    const nested = [
+      { id: 'benign', original_filename: 'a.png', relative_path: 'Breast cancer/benign/a.png' },
+      { id: 'malignant', original_filename: 'b.png', relative_path: 'Breast cancer/malignant/b.png' },
+      { id: 'assigned', original_filename: 'c.png', relative_path: 'Breast cancer/malignant/c.png' },
+    ] as Asset[]
+    const root = buildAssetFolderTree(nested)
+    const breast = root.children[0]
+    expect(breast.name).toBe('Breast cancer')
+    expect(breast.children.map(child => child.name)).toEqual(['benign', 'malignant'])
+    expect(collectFolderAssets(breast).map(asset => asset.id)).toEqual(['benign', 'malignant', 'assigned'])
+    expect(toggleFolderAssetSelection([], breast, new Set(['assigned']))).toEqual(['benign', 'malignant'])
+    expect(toggleFolderAssetSelection(['benign', 'malignant'], breast, new Set(['assigned']))).toEqual([])
   })
 })
 

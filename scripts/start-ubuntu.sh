@@ -119,6 +119,9 @@ export DATABASE_URL SECRET_KEY STORAGE_ROOT EXPORT_ROOT ADMIN_USERNAME ADMIN_PAS
 export CORS_ORIGINS="http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT"
 export SONOLABEL_API_TARGET="http://$API_PROXY_HOST:$API_PORT"
 
+echo "[setup] Applying database migrations..."
+(cd "$BACKEND_DIR" && "$VENV_DIR/bin/python" -m alembic -c alembic.ini upgrade head)
+
 api_pid=""
 web_pid=""
 cleanup() {

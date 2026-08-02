@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, CheckSquare, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
+import { Archive, CheckSquare, ChevronDown, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
 import { ApiError, downloadExport, request } from '../api/client'
 import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
 export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
+export interface AssetFolderNode { name: string; path: string; assets: Asset[]; children: AssetFolderNode[] }
+
+const ROOT_ASSET_FOLDER_PATH = '__all_assets__'
+
+const SUPPORTED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff', 'dcm', 'dicom'])
 
 const DEFAULT_LABELS: Label[] = [
   { label_code: 'FETAL_HEAD', label_name: '태아 머리', annotation_type: 'polygon', color: '#36d6c2', required: true, shortcut: '1' },
@@ -40,6 +45,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [error, setError] = useState('')
   const [loadingAssets, setLoadingAssets] = useState(false)
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+  const [expandedAssetFolders, setExpandedAssetFolders] = useState<string[]>([ROOT_ASSET_FOLDER_PATH])
   const [assigneeId, setAssigneeId] = useState('')
   const [reviewerId, setReviewerId] = useState('')
   const [assigning, setAssigning] = useState(false)
@@ -69,6 +75,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     setLoadingAssets(true)
     setError('')
     setSelectedAssetIds([])
+    setExpandedAssetFolders([ROOT_ASSET_FOLDER_PATH])
     setAssignmentMessage('')
     setAssignmentError('')
     setSchemas([])
@@ -162,10 +169,22 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const upload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!selected) return; clearNotices()
     const form = event.currentTarget
+    const formValues = new FormData(form)
+    const input = form.elements.namedItem('files') as HTMLInputElement | null
+    const selectedFiles = Array.from(input?.files ?? [])
+    const files = selectedFiles.filter(file => SUPPORTED_IMAGE_EXTENSIONS.has(file.name.split('.').pop()?.toLowerCase() ?? ''))
+    if (!files.length) { setError('PNG, JPG, TIFF 또는 DICOM 파일이 들어 있는 폴더를 선택하세요.'); return }
+    const payload = new FormData()
+    payload.append('dataset_name', String(formValues.get('dataset_name') ?? '').trim())
+    files.forEach(file => {
+      payload.append('files', file, file.name)
+      payload.append('relative_paths', file.webkitRelativePath || file.name)
+    })
     try {
-      const result = await request<{ assets: Asset[]; duplicate_count: number }>(`/projects/${selected.id}/datasets/import`, { method: 'POST', body: new FormData(form) })
+      const result = await request<{ assets: Asset[]; duplicate_count: number }>(`/projects/${selected.id}/datasets/import`, { method: 'POST', body: payload })
       setAssets(current => [...result.assets, ...current.filter(item => !result.assets.some(added => added.id === item.id))])
-      setMessage(`${result.assets.length}개 영상 등록, 중복 ${result.duplicate_count}개 제외`); form.reset()
+      const unsupported = selectedFiles.length - files.length
+      setMessage(`${result.assets.length}개 영상 등록, 중복 ${result.duplicate_count}개 제외${unsupported ? `, 미지원 파일 ${unsupported}개 제외` : ''}. 폴더 구조를 그대로 보존했습니다.`); form.reset()
     } catch (cause) { setError(errorText(cause, '데이터를 등록하지 못했습니다.')) }
   }
   const createExport = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -200,8 +219,14 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     return result
   }, [projectTasks])
   const selectableAssets = useMemo(() => assets.filter(asset => !taskByAsset.has(asset.id)), [assets, taskByAsset])
+  const assetFolderTree = useMemo(() => buildAssetFolderTree(assets), [assets])
+  const expandedAssetFolderSet = useMemo(() => new Set(expandedAssetFolders), [expandedAssetFolders])
   const chooseAssets = (mode: AssetSelectionMode) => setSelectedAssetIds(selectAssetIds(selectableAssets, mode))
   const toggleAsset = (assetId: string) => setSelectedAssetIds(current => current.includes(assetId) ? current.filter(id => id !== assetId) : [...current, assetId])
+  const toggleAssetFolder = (node: AssetFolderNode) => {
+    setSelectedAssetIds(current => toggleFolderAssetSelection(current, node, new Set(taskByAsset.keys())))
+  }
+  const toggleAssetFolderOpen = (path: string) => setExpandedAssetFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
   const assignSelected = async () => {
     setAssignmentMessage(''); setAssignmentError('')
     if (!selected) { setAssignmentError('프로젝트를 먼저 선택하세요.'); return }
@@ -283,16 +308,16 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
           {exportError && <div className="error-banner export-notice" role="alert">{exportError}</div>}
           <div className="export-history">{exportJobs.slice(0, 8).map(job => <article key={job.id}><span className={`export-status ${job.status.toLowerCase()}`}>{job.status}</span><div><strong>{exportFormatName(job.format)}</strong><small>{job.storage_key ?? job.error ?? '저장 경로 준비 중'}</small></div><time>{new Date(job.created_at).toLocaleString('ko-KR')}</time><button onClick={() => downloadExportJob(job)} disabled={job.status !== 'COMPLETED'}><Download /> 내 PC로 ZIP 다운로드</button></article>)}{!exportJobs.length && <div className="empty">아직 저장한 결과가 없습니다.</div>}</div>
         </section>
-        <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><form className="upload-box" onSubmit={upload}><Upload /><strong>PNG, JPG, TIFF, DICOM</strong><span>원본은 변경하지 않고 보호 저장소에 보관합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">데이터 등록</button></form></section>
+        <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><div className="dataset-import-grid"><form className="upload-box" onSubmit={upload}><Upload /><strong>파일 선택 등록</strong><span>PNG, JPG, TIFF, DICOM 파일을 여러 개 선택합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" aria-label="데이터셋 이름" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">선택 파일 등록</button></form><form className="upload-box folder-upload" onSubmit={upload}><Folder /><strong>폴더 전체 등록</strong><span>선택한 폴더의 하위 구조와 파일 경로를 그대로 보존합니다.</span><input name="dataset_name" defaultValue="Folder Dataset" aria-label="폴더 데이터셋 이름" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" ref={element => { if (element) { element.setAttribute('webkitdirectory', ''); element.setAttribute('directory', '') } }} onChange={event => { const first = event.currentTarget.files?.[0]; const root = first?.webkitRelativePath.split('/')[0]; const form = event.currentTarget.form; const nameInput = form?.elements.namedItem('dataset_name') as HTMLInputElement | null; if (root && nameInput) nameInput.value = root }} required /><button className="primary">폴더 구조 그대로 등록</button></form></div><p className="import-security-note">원본 파일은 변경하지 않고 난수화된 보호 저장소에 보관하며, 화면에는 안전하게 검증한 상대 폴더 경로만 표시합니다.</p></section>
         <section className="panel assignment-panel"><div className="panel-heading"><div><span className="eyebrow">BATCH ASSIGNMENT</span><h2>등록 영상 및 작업 배정</h2></div><span>{assets.length}개 · 미배정 {selectableAssets.length}개</span></div>
           {assets.length > 0 && <div className="batch-assignment">
             <div className="selection-toolbar"><strong>{selectedAssetIds.length}개 선택</strong><button onClick={() => chooseAssets('all')}>전체 선택</button><button onClick={() => chooseAssets('odd')}>홀수 번째</button><button onClick={() => chooseAssets('even')}>짝수 번째</button><button onClick={() => chooseAssets('none')}>선택 해제</button></div>
             <div className="assignment-fields"><label>라벨러<select value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">라벨러 선택</option>{users.filter(user => user.role === 'ANNOTATOR' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><label>검수자 (선택)<select value={reviewerId} onChange={event => setReviewerId(event.target.value)}><option value="">검수자 없음</option>{users.filter(user => user.role === 'REVIEWER' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><button className="primary batch-assign-button" onClick={assignSelected} disabled={assigning}><CheckSquare /> {assigning ? '배정 중...' : `${selectedAssetIds.length}개 이미지 배정`}</button></div>
-            {!selectedAssetIds.length && <small className="muted">카드의 체크박스 또는 전체·홀수·짝수 선택 버튼으로 이미지를 선택하세요.</small>}
+            {!selectedAssetIds.length && <small className="muted">폴더 체크박스, 영상 카드 또는 전체·홀수·짝수 선택 버튼으로 이미지를 선택하세요.</small>}
             {assignmentMessage && <div className="success-banner assignment-notice" role="status">{assignmentMessage}</div>}
             {assignmentError && <div className="error-banner assignment-notice" role="alert">{assignmentError}</div>}
           </div>}
-          {loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-grid">{assets.map(asset => <AssetCard key={asset.id} asset={asset} selected={selectedAssetIds.includes(asset.id)} task={taskByAsset.get(asset.id)} users={users} onToggle={toggleAsset} />)}</div> : <div className="empty">등록된 영상이 없습니다.</div>}
+          {loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-folder-tree"><AssetFolderTreeNode node={assetFolderTree} depth={0} expanded={expandedAssetFolderSet} selectedAssetIds={selectedAssetIds} taskByAsset={taskByAsset} users={users} onToggleOpen={toggleAssetFolderOpen} onToggleFolder={toggleAssetFolder} onToggleAsset={toggleAsset} /></div> : <div className="empty">등록된 영상이 없습니다.</div>}
         </section>
       </> : <div className="empty panel">프로젝트를 생성하거나 선택하세요.</div>}</div>
     </div>
@@ -303,6 +328,82 @@ function AssetCard({ asset, selected, task, users, onToggle }: { asset: Asset; s
   const assignee = users.find(user => user.id === task?.assigned_to)
   const reviewer = users.find(user => user.id === task?.reviewer_id)
   return <article className={`asset-card selectable ${selected ? 'selected' : ''} ${task ? 'assigned' : ''}`}><label className="asset-selector"><input type="checkbox" checked={selected} disabled={!!task} onChange={() => onToggle(asset.id)} aria-label={`${asset.original_filename} 선택`} /><span>{task ? '배정됨' : '선택'}</span></label><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong title={asset.original_filename}>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small>{task ? <div className="assignment-summary"><strong>{assignee?.display_name ?? '미지정'}</strong><small>{reviewer ? `검수 ${reviewer.display_name}` : '검수자 없음'} · {task.status}</small></div> : <small className="available-badge">배정 가능</small>}</article>
+}
+
+function AssetFolderTreeNode({ node, depth, expanded, selectedAssetIds, taskByAsset, users, onToggleOpen, onToggleFolder, onToggleAsset }: { node: AssetFolderNode; depth: number; expanded: Set<string>; selectedAssetIds: string[]; taskByAsset: Map<string, Task>; users: User[]; onToggleOpen: (path: string) => void; onToggleFolder: (node: AssetFolderNode) => void; onToggleAsset: (assetId: string) => void }) {
+  const allAssets = collectFolderAssets(node)
+  const selectableAssets = allAssets.filter(asset => !taskByAsset.has(asset.id))
+  const selectedCount = selectableAssets.filter(asset => selectedAssetIds.includes(asset.id)).length
+  const allSelected = selectableAssets.length > 0 && selectedCount === selectableAssets.length
+  const open = expanded.has(node.path)
+  return <section className={`asset-folder-node depth-${Math.min(depth, 4)}`}>
+    <header className="asset-folder-header" style={{ marginLeft: `${depth * 18}px` }}>
+      <button className="asset-folder-toggle" onClick={() => onToggleOpen(node.path)} aria-expanded={open} aria-label={`${node.name} 폴더 ${open ? '접기' : '열기'}`}>
+        {open ? <ChevronDown /> : <ChevronRight />}<Folder /><span><strong>{node.name}</strong><small>전체 {allAssets.length}개 · 미배정 {selectableAssets.length}개{selectedCount ? ` · 선택 ${selectedCount}개` : ''}</small></span>
+      </button>
+      <label className={`asset-folder-selector ${allSelected ? 'selected' : selectedCount > 0 ? 'partial' : ''} ${selectableAssets.length ? '' : 'disabled'}`} title={selectableAssets.length ? `${node.name} 안의 미배정 영상 전체 선택` : '배정 가능한 영상이 없습니다.'}>
+        <input type="checkbox" checked={allSelected} disabled={!selectableAssets.length} onChange={() => onToggleFolder(node)} aria-label={`${node.name} 폴더 전체 선택`} />
+        <span>{allSelected ? '전체 해제' : selectedCount ? `${selectedCount}/${selectableAssets.length} 선택` : '폴더 전체 선택'}</span>
+      </label>
+    </header>
+    {open && <div className="asset-folder-contents">
+      {node.assets.length > 0 && <div className="asset-grid folder-direct-assets">{node.assets.map(asset => <AssetCard key={asset.id} asset={asset} selected={selectedAssetIds.includes(asset.id)} task={taskByAsset.get(asset.id)} users={users} onToggle={onToggleAsset} />)}</div>}
+      {node.children.map(child => <AssetFolderTreeNode key={child.path} node={child} depth={depth + 1} expanded={expanded} selectedAssetIds={selectedAssetIds} taskByAsset={taskByAsset} users={users} onToggleOpen={onToggleOpen} onToggleFolder={onToggleFolder} onToggleAsset={onToggleAsset} />)}
+    </div>}
+  </section>
+}
+
+export function buildAssetFolderTree(assets: Asset[]): AssetFolderNode {
+  type MutableFolder = AssetFolderNode & { childMap: Map<string, MutableFolder> }
+  const root: MutableFolder = { name: '전체 데이터', path: ROOT_ASSET_FOLDER_PATH, assets: [], children: [], childMap: new Map() }
+  for (const asset of assets) {
+    const relativePath = asset.relative_path || asset.original_filename
+    const folders = relativePath.split('/').slice(0, -1).filter(Boolean)
+    let current = root
+    for (const folderName of folders) {
+      const folderPath = current.path === ROOT_ASSET_FOLDER_PATH ? folderName : `${current.path}/${folderName}`
+      let child = current.childMap.get(folderName)
+      if (!child) {
+        child = { name: folderName, path: folderPath, assets: [], children: [], childMap: new Map() }
+        current.childMap.set(folderName, child)
+        current.children.push(child)
+      }
+      current = child
+    }
+    current.assets.push(asset)
+  }
+  const sortNode = (node: MutableFolder) => {
+    node.assets.sort((left, right) => (left.relative_path || left.original_filename).localeCompare(right.relative_path || right.original_filename, 'ko'))
+    node.children.sort((left, right) => left.name.localeCompare(right.name, 'ko'))
+    node.children.forEach(child => sortNode(child as MutableFolder))
+  }
+  sortNode(root)
+  return root
+}
+
+export function collectFolderAssets(node: AssetFolderNode): Asset[] {
+  return [...node.assets, ...node.children.flatMap(collectFolderAssets)]
+}
+
+export function toggleFolderAssetSelection(currentIds: string[], node: AssetFolderNode, unavailableIds: Set<string>): string[] {
+  const selectableIds = collectFolderAssets(node).map(asset => asset.id).filter(id => !unavailableIds.has(id))
+  const selected = new Set(currentIds)
+  const remove = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+  selectableIds.forEach(id => remove ? selected.delete(id) : selected.add(id))
+  return [...selected]
+}
+
+export function groupAssetsByFolder(assets: Asset[]): Array<{ path: string; assets: Asset[] }> {
+  const groups = new Map<string, Asset[]>()
+  for (const asset of assets) {
+    const path = asset.relative_path || asset.original_filename
+    const segments = path.split('/')
+    const folder = segments.length > 1 ? segments.slice(0, -1).join('/') : '최상위 폴더'
+    groups.set(folder, [...(groups.get(folder) ?? []), asset])
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, 'ko'))
+    .map(([path, grouped]) => ({ path, assets: grouped.sort((left, right) => (left.relative_path || left.original_filename).localeCompare(right.relative_path || right.original_filename, 'ko')) }))
 }
 
 function errorText(cause: unknown, fallback: string) { return cause instanceof ApiError ? String(cause.detail) : fallback }

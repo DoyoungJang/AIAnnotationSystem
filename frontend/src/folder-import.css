@@ -1,0 +1,132 @@
+.dataset-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.folder-upload {
+  border-color: #397268;
+  background: #091c1c;
+}
+
+.import-security-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 12px 2px 0;
+}
+
+.asset-folder-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.asset-folder-node {
+  border: 1px solid #18323d;
+  border-radius: 10px;
+  background: #08141b;
+  overflow: hidden;
+}
+
+.asset-folder-node .asset-folder-node {
+  margin: 9px 12px 9px 0;
+  background: #0a1820;
+}
+
+.asset-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 9px 12px;
+  color: #b9d0d7;
+}
+
+.asset-folder-toggle {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 5px;
+}
+
+.asset-folder-toggle:hover:not(:disabled) {
+  border-color: transparent;
+  background: #13262f;
+}
+
+.asset-folder-toggle > svg:first-child {
+  color: #72919d;
+}
+
+.asset-folder-toggle > svg:nth-child(2) {
+  color: var(--teal);
+}
+
+.asset-folder-toggle span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.asset-folder-toggle strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.asset-folder-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.asset-folder-selector {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #2b5860;
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #a9c5cc;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.asset-folder-selector.selected {
+  border-color: var(--teal);
+  background: #143833;
+  color: #91eee0;
+}
+
+.asset-folder-selector.partial {
+  border-color: var(--amber);
+  color: #f3cc7a;
+}
+
+.asset-folder-selector input {
+  accent-color: var(--teal);
+  margin: 0;
+}
+
+.asset-folder-selector.disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.asset-folder-contents {
+  border-top: 1px solid #16313b;
+  padding: 4px 0 4px 12px;
+}
+
+.folder-direct-assets {
+  padding: 12px 12px 12px 0;
+}
+
+.asset-folder-header svg {
+  width: 17px;
+}

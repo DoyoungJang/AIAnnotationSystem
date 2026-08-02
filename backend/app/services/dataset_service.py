@@ -1,5 +1,6 @@
 """Safe image import, hierarchy creation and protected media access."""
 import hashlib
+import re
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -44,11 +45,20 @@ class DatasetService:
         assets: list[MediaAsset] = []
         duplicates = 0
         for original_name, content_type, data in files:
+            relative_path = normalize_relative_path(original_name)
             if len(data) > self.settings.max_upload_mb * 1024 * 1024:
                 raise HTTPException(413, "업로드 파일 크기 제한을 초과했습니다.")
-            suffix = Path(original_name).suffix.lower()
+            suffix = Path(relative_path).suffix.lower()
             checksum = hashlib.sha256(data).hexdigest()
-            if self.db.scalar(select(MediaAsset).where(MediaAsset.checksum == checksum)):
+            if self.db.scalar(
+                select(MediaAsset)
+                .join(Dataset, MediaAsset.dataset_id == Dataset.id)
+                .where(
+                    Dataset.project_id == project_id,
+                    MediaAsset.checksum == checksum,
+                    MediaAsset.relative_path == relative_path,
+                )
+            ):
                 duplicates += 1
                 continue
             try:
@@ -75,9 +85,9 @@ class DatasetService:
             buffer = BytesIO(); thumbnail.save(buffer, "PNG")
             self.storage.put(storage_key, data)
             self.storage.put(thumbnail_key, buffer.getvalue())
-            asset = MediaAsset(dataset_id=dataset.id, series_id=series.id, sop_instance_uid=info.sop_uid, storage_key=storage_key, media_type=info.media_type, original_filename=Path(original_name).name, width=info.width, height=info.height, frame_count=info.frame_count, checksum=checksum, thumbnail_key=thumbnail_key, phi_suspected=bool(info.phi_tags))
+            asset = MediaAsset(dataset_id=dataset.id, series_id=series.id, sop_instance_uid=info.sop_uid, storage_key=storage_key, media_type=info.media_type, original_filename=Path(relative_path).name, relative_path=relative_path, width=info.width, height=info.height, frame_count=info.frame_count, checksum=checksum, thumbnail_key=thumbnail_key, phi_suspected=bool(info.phi_tags))
             self.db.add(asset); self.db.flush(); assets.append(asset)
-        dataset.manifest_hash = hashlib.sha256("".join(sorted(a.checksum for a in assets)).encode()).hexdigest()
+        dataset.manifest_hash = hashlib.sha256("".join(sorted(f"{a.relative_path}\0{a.checksum}" for a in assets)).encode()).hexdigest()
         self.audit.record(actor, "DATASET_IMPORTED", "dataset", dataset.id, project_id, f"Imported {len(assets)} assets; {duplicates} duplicates skipped")
         self.db.commit()
         return dataset, assets, duplicates
@@ -109,3 +119,23 @@ class DatasetService:
         if key is None:
             raise HTTPException(404, "Thumbnail이 없습니다.")
         return self.storage.read(key), "image/png" if thumbnail else asset.media_type
+
+
+def normalize_relative_path(value: str) -> str:
+    """Validate and normalize a browser-supplied folder-relative file path."""
+    raw = value.strip().replace("\\", "/")
+    if not raw or raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+        raise HTTPException(422, "파일 상대 경로가 올바르지 않습니다.")
+    cleaned: list[str] = []
+    windows_reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    for raw_segment in raw.split("/"):
+        segment = raw_segment.strip()
+        if not segment or segment in {".", ".."} or segment.endswith("."):
+            raise HTTPException(422, "파일 상대 경로가 올바르지 않습니다.")
+        if len(segment) > 255 or re.search(r'[<>:"|?*\x00-\x1f]', segment) or segment.split(".")[0].upper() in windows_reserved:
+            raise HTTPException(422, "파일 경로에 사용할 수 없는 문자가 있습니다.")
+        cleaned.append(segment)
+    normalized = "/".join(cleaned)
+    if len(normalized) > 1000:
+        raise HTTPException(422, "파일 상대 경로가 너무 깁니다.")
+    return normalized

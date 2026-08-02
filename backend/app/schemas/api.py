@@ -136,6 +136,7 @@ class AssetOut(ORMModel):
     series_id: str
     media_type: str
     original_filename: str
+    relative_path: str
     width: int
     height: int
     frame_count: int

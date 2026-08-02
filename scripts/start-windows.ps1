@@ -111,6 +111,14 @@ $env:ADMIN_PASSWORD = $AdminPassword
 $env:CORS_ORIGINS = "http://localhost:$WebPort,http://127.0.0.1:$WebPort"
 $env:SONOLABEL_API_TARGET = "http://${ApiProxyHost}:$ApiPort"
 
+Write-Host "[setup] Applying database migrations..."
+Push-Location $BackendDir
+try {
+    & $VenvPython -m alembic -c alembic.ini upgrade head
+    Assert-NativeSuccess "Applying database migrations"
+}
+finally { Pop-Location }
+
 function Start-SonoProcess {
     param([string]$FileName, [string]$Arguments, [string]$WorkingDirectory)
     $Info = [System.Diagnostics.ProcessStartInfo]::new()
