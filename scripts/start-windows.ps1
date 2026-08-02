@@ -111,6 +111,12 @@ $env:ADMIN_PASSWORD = $AdminPassword
 $env:CORS_ORIGINS = "http://localhost:$WebPort,http://127.0.0.1:$WebPort"
 $env:SONOLABEL_API_TARGET = "http://${ApiProxyHost}:$ApiPort"
 
+# Ensure this project's `app` package wins over unrelated packages with the
+# same generic name, regardless of the directory the launcher was called from.
+$PythonPathEntries = @($BackendDir)
+if ($env:PYTHONPATH) { $PythonPathEntries += $env:PYTHONPATH }
+$env:PYTHONPATH = $PythonPathEntries -join [System.IO.Path]::PathSeparator
+
 Write-Host "[setup] Applying database migrations..."
 Push-Location $BackendDir
 try {
