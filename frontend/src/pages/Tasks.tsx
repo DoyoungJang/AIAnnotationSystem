@@ -88,15 +88,22 @@ export function taskFolderPath(task: Task): string {
   return relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
 }
 
-export function nextTaskInSameFolder(tasks: Task[], current: Task): Task | undefined {
+export function adjacentTasksInSameFolder(tasks: Task[], current: Task): { previous?: Task; next?: Task } {
   const folder = taskFolderPath(current)
   const sameFolder = [...tasks, ...(tasks.some(task => task.id === current.id) ? [] : [current])]
-    .filter(task => task.project_id === current.project_id && task.assigned_to === current.assigned_to && taskFolderPath(task) === folder)
+    .filter(task => task.project_id === current.project_id && task.assigned_to === current.assigned_to && taskFolderPath(task) === folder && (task.id === current.id || NEXT_LABELING_STATUSES.has(task.status)))
     .sort((left, right) => {
       const leftPath = left.media_asset_relative_path || left.media_asset_original_filename || left.media_asset_id
       const rightPath = right.media_asset_relative_path || right.media_asset_original_filename || right.media_asset_id
       return leftPath.localeCompare(rightPath, 'ko') || left.id.localeCompare(right.id)
     })
   const currentIndex = sameFolder.findIndex(task => task.id === current.id)
-  return sameFolder.slice(currentIndex + 1).find(task => NEXT_LABELING_STATUSES.has(task.status))
+  return {
+    previous: currentIndex > 0 ? sameFolder[currentIndex - 1] : undefined,
+    next: currentIndex >= 0 ? sameFolder[currentIndex + 1] : undefined,
+  }
+}
+
+export function nextTaskInSameFolder(tasks: Task[], current: Task): Task | undefined {
+  return adjacentTasksInSameFolder(tasks, current).next
 }

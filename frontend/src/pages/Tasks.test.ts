@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../types'
-import { buildTaskProjectTrees, collectFolderTasks, nextTaskInSameFolder } from './Tasks'
+import { adjacentTasksInSameFolder, buildTaskProjectTrees, collectFolderTasks, nextTaskInSameFolder } from './Tasks'
 
 describe('annotator task folder tree', () => {
   it('groups assigned tasks by project and preserves nested upload folders', () => {
@@ -34,5 +34,6 @@ describe('annotator task folder tree', () => {
 
     expect(nextTaskInSameFolder([otherFolder, otherAssignee, next, submitted, current], current)).toBe(next)
     expect(nextTaskInSameFolder([current, submitted, otherFolder], current)).toBeUndefined()
+    expect(adjacentTasksInSameFolder([next, submitted, current], next)).toEqual({ previous: current, next: undefined })
   })
 })
