@@ -55,6 +55,15 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     moved_project = client.patch(f"/api/v1/projects/{project_id}/folder", headers=headers, json={"folder_path":"영상의학과/태아"})
     assert moved_project.status_code == 200 and moved_project.json()["folder_path"] == "영상의학과/태아"
     assert client.patch(f"/api/v1/projects/{project_id}/folder", headers=headers, json={"folder_path":"../outside"}).status_code == 422
+    delete_candidate = client.post("/api/v1/projects", headers=headers, json={"name":"Delete me exactly","description":"","folder_path":"임시","task_types":["bbox"]})
+    delete_candidate_id = delete_candidate.json()["id"]
+    assert client.request("DELETE", f"/api/v1/projects/{delete_candidate_id}", headers=headers, json={"project_name":"wrong name"}).status_code == 422
+    assert client.request("DELETE", f"/api/v1/projects/{delete_candidate_id}", headers=headers, json={"project_name":"Delete me exactly"}).status_code == 204
+    assert client.get(f"/api/v1/projects/{delete_candidate_id}", headers=headers).status_code == 404
+    assert delete_candidate_id not in {item["id"] for item in client.get("/api/v1/projects", headers=headers).json()}
+    deleted_projects = client.get("/api/v1/projects/deleted", headers=headers)
+    assert deleted_projects.status_code == 200
+    assert {item["id"] for item in deleted_projects.json()} == {delete_candidate_id}
     weak_password = client.post("/api/v1/users", headers=headers, json={"username":"weak","display_name":"Weak","role":"ANNOTATOR","password":"lowercase1","password_confirm":"lowercase1"})
     assert weak_password.status_code == 422
     mismatched_password = client.post("/api/v1/users", headers=headers, json={"username":"mismatch","display_name":"Mismatch","role":"ANNOTATOR","password":"Strong-pass!","password_confirm":"Different-pass!"})
@@ -67,10 +76,18 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert member.status_code == 201 and member.json()["project_role"] == "PROJECT_MANAGER"
     manager_login = client.post("/api/v1/auth/login", json={"username":"manager","password":"Manager-password-123"})
     manager_headers = {"Authorization": f"Bearer {manager_login.json()['access_token']}"}
+    assert client.get("/api/v1/projects/deleted", headers=manager_headers).status_code == 403
+    assert client.request("DELETE", f"/api/v1/projects/deleted/{project_id}", headers=headers, json={"project_name":"Fetal US"}).status_code == 409
+    assert client.request("DELETE", f"/api/v1/projects/deleted/{delete_candidate_id}", headers=manager_headers, json={"project_name":"Delete me exactly"}).status_code == 403
+    assert client.request("DELETE", f"/api/v1/projects/deleted/{delete_candidate_id}", headers=headers, json={"project_name":"wrong name"}).status_code == 422
+    purge = client.request("DELETE", f"/api/v1/projects/deleted/{delete_candidate_id}", headers=headers, json={"project_name":"Delete me exactly"})
+    assert purge.status_code == 200 and purge.json()["project_id"] == delete_candidate_id
+    assert client.get("/api/v1/projects/deleted", headers=headers).json() == []
     assert client.get(f"/api/v1/projects/{project_id}", headers=manager_headers).status_code == 200
     assert all(user["role"] not in {"ADMINISTRATOR", "PROJECT_MANAGER"} for user in client.get("/api/v1/users", headers=manager_headers).json())
     added_by_manager = client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":annotator.json()["id"]})
     assert added_by_manager.status_code == 201 and added_by_manager.json()["project_role"] == "ANNOTATOR"
+    assert client.request("DELETE", f"/api/v1/projects/{project_id}", headers=manager_headers, json={"project_name":"Fetal US"}).status_code == 403
     preview_setting = client.patch(f"/api/v1/projects/{project_id}/preview-settings", headers=manager_headers, json={"show_task_thumbnails":True})
     assert preview_setting.status_code == 200 and preview_setting.json()["show_task_thumbnails"] is True
     forbidden_user = client.post("/api/v1/users", headers=manager_headers, json={"username":"blocked","display_name":"Blocked","role":"ANNOTATOR","password":"Blocked-password-123","password_confirm":"Blocked-password-123"})

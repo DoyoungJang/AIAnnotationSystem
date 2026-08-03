@@ -29,7 +29,7 @@ class DatasetService:
 
     def _require_manage(self, actor: User, project_id: str) -> Project:
         project = self.db.get(Project, project_id)
-        if project is None:
+        if project is None or project.status == "DELETED":
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role not in {Role.ADMINISTRATOR, Role.PROJECT_MANAGER}:
             raise HTTPException(403, "데이터셋 관리 권한이 없습니다.")
@@ -106,6 +106,9 @@ class DatasetService:
         return list(self.db.scalars(select(MediaAsset).where(MediaAsset.dataset_id == dataset_id)).all())
 
     def _require_access(self, actor: User, project_id: str) -> None:
+        project = self.db.get(Project, project_id)
+        if project is None or project.status == "DELETED":
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role != Role.ADMINISTRATOR and self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == actor.id)) is None:
             raise HTTPException(403, "이 프로젝트에 접근할 권한이 없습니다.")
 

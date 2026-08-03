@@ -27,6 +27,9 @@ class AnnotationService:
         task = self.db.get(AnnotationTask, task_id)
         if task is None:
             raise HTTPException(404, "작업을 찾을 수 없습니다.")
+        project = self.db.get(Project, task.project_id)
+        if project is None or project.status == "DELETED":
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         privileged = actor.role in {Role.ADMINISTRATOR, Role.PROJECT_MANAGER}
         involved = actor.id in {task.assigned_to, task.reviewer_id}
         if not privileged and not involved:
@@ -40,6 +43,7 @@ class AnnotationService:
             select(AnnotationTask, Project.name, Project.show_task_thumbnails, MediaAsset.original_filename, MediaAsset.relative_path)
             .join(Project, Project.id == AnnotationTask.project_id)
             .join(MediaAsset, MediaAsset.id == AnnotationTask.media_asset_id)
+            .where(Project.status != "DELETED")
             .order_by(AnnotationTask.priority.desc(), AnnotationTask.updated_at.desc())
         )
         if actor.role == Role.ANNOTATOR:

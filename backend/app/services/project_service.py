@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectFolderUpdate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate, UserPasswordReset
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectDeleteRequest, ProjectFolderUpdate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate, UserPasswordReset
 from app.services.audit_service import AuditService
 
 
@@ -96,14 +96,14 @@ class ProjectService:
         }
 
     def list_projects(self, actor: User) -> list[Project]:
-        query = select(Project).order_by(Project.updated_at.desc())
+        query = select(Project).where(Project.status != "DELETED").order_by(Project.updated_at.desc())
         if actor.role != Role.ADMINISTRATOR:
             query = query.join(ProjectMember).where(ProjectMember.user_id == actor.id)
         return list(self.db.scalars(query).all())
 
     def get_project(self, actor: User, project_id: str) -> Project:
         project = self.db.get(Project, project_id)
-        if project is None:
+        if project is None or project.status == "DELETED":
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role != Role.ADMINISTRATOR and self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == actor.id)) is None:
             raise HTTPException(403, "이 프로젝트에 접근할 권한이 없습니다.")
@@ -146,6 +146,16 @@ class ProjectService:
         self.db.commit()
         self.db.refresh(project)
         return project
+
+    def delete_project(self, actor: User, project_id: str, payload: ProjectDeleteRequest) -> None:
+        project = self.get_project(actor, project_id)
+        if actor.role != Role.ADMINISTRATOR and not (actor.role == Role.PROJECT_MANAGER and project.created_by == actor.id):
+            raise HTTPException(403, "프로젝트 삭제 권한이 없습니다.")
+        if payload.project_name != project.name:
+            raise HTTPException(422, "프로젝트 이름이 일치하지 않습니다.")
+        project.status = "DELETED"
+        self.audit.record(actor, "PROJECT_DELETED", "project", project.id, project.id, "Project logically deleted after exact-name confirmation")
+        self.db.commit()
 
     def create_schema(self, actor: User, project_id: str, payload: LabelSchemaCreate) -> LabelSchemaVersion:
         self.get_project(actor, project_id)

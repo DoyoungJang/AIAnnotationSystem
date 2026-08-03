@@ -121,6 +121,17 @@ class ProjectFolderUpdate(BaseModel):
         return normalize_project_folder_path(value)
 
 
+class ProjectDeleteRequest(BaseModel):
+    project_name: str = Field(min_length=1, max_length=160)
+
+
+class ProjectPurgeOut(BaseModel):
+    project_id: str
+    deleted_assets: int
+    deleted_tasks: int
+    deleted_files: int
+
+
 class ProjectPreviewSettings(BaseModel):
     show_task_thumbnails: bool
 

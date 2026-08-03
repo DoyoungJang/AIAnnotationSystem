@@ -84,6 +84,8 @@ class ExportService:
     def get(self, actor: User, job_id: str) -> ExportJob:
         job = self.db.get(ExportJob, job_id)
         if job is None: raise HTTPException(404, "Export를 찾을 수 없습니다.")
+        project = self.db.get(Project, job.project_id)
+        if project is None or project.status == "DELETED": raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role not in {Role.ADMINISTRATOR, Role.PROJECT_MANAGER}: raise HTTPException(403, "Export 권한이 없습니다.")
         if actor.role != Role.ADMINISTRATOR and self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == job.project_id, ProjectMember.user_id == actor.id)) is None: raise HTTPException(403, "이 프로젝트에 접근할 권한이 없습니다.")
         return job
@@ -100,7 +102,7 @@ class ExportService:
     def _require_project_access(self, actor: User, project_id: str) -> Project:
         self._require_manager(actor)
         project = self.db.get(Project, project_id)
-        if project is None:
+        if project is None or project.status == "DELETED":
             raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role != Role.ADMINISTRATOR and self.db.scalar(select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == actor.id)) is None:
             raise HTTPException(403, "이 프로젝트에 접근할 권한이 없습니다.")

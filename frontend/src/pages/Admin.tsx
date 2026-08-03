@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Database, FolderKanban, KeyRound, UserPlus, Users, X } from 'lucide-react'
+import { Database, FolderKanban, KeyRound, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { ApiError, request } from '../api/client'
 import { PASSWORD_POLICY_MESSAGE, passwordPairError } from '../passwordPolicy'
 import type { Project, Role, Task, User } from '../types'
 import { Projects } from './Projects'
 import { ProjectData } from './ProjectData'
+import { DeletedProjects } from './DeletedProjects'
 
 const roleNames: Record<Role, string> = {
   ADMINISTRATOR: 'Sudo 관리자',
@@ -21,7 +22,7 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
   users: User[]
   onRefresh: () => void
 }) {
-  const [section, setSection] = useState<'projects' | 'data' | 'users'>('projects')
+  const [section, setSection] = useState<'projects' | 'data' | 'deleted_projects' | 'users'>('projects')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [resetUserId, setResetUserId] = useState('')
@@ -86,10 +87,12 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
     <div className="admin-tabs">
       <button className={section === 'projects' ? 'active' : ''} onClick={() => setSection('projects')}><FolderKanban /> 프로젝트 관리</button>
       <button className={section === 'data' ? 'active' : ''} onClick={() => setSection('data')}><Database /> 프로젝트 데이터</button>
+      {actor.role === 'ADMINISTRATOR' && <button className={section === 'deleted_projects' ? 'active' : ''} onClick={() => setSection('deleted_projects')}><Trash2 /> 삭제된 프로젝트</button>}
       {actor.role === 'ADMINISTRATOR' && <button className={section === 'users' ? 'active' : ''} onClick={() => setSection('users')}><Users /> 사용자 관리</button>}
     </div>
     {section === 'projects' && <Projects actor={actor} projects={projects} tasks={tasks} users={users} onRefresh={onRefresh} />}
     {section === 'data' && <ProjectData projects={projects} users={users} />}
+    {section === 'deleted_projects' && actor.role === 'ADMINISTRATOR' && <DeletedProjects />}
     {section === 'users' && actor.role === 'ADMINISTRATOR' && <div className="admin-user-layout">
       <section className="panel">
         <div className="panel-heading"><div><span className="eyebrow">ACCOUNT CREATION</span><h2>사용자 생성</h2></div><UserPlus /></div>

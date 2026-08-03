@@ -111,7 +111,12 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [folderSaving, setFolderSaving] = useState(false)
   const [folderMessage, setFolderMessage] = useState('')
   const [folderError, setFolderError] = useState('')
-  const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))].map(project => ({ ...project, folder_path: projectFolderOverrides[project.id] ?? project.folder_path })), [projects, created, projectFolderOverrides])
+  const [deletedProjectIds, setDeletedProjectIds] = useState<string[]>([])
+  const [showDeleteProject, setShowDeleteProject] = useState(false)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deletingProject, setDeletingProject] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))].filter(project => !deletedProjectIds.includes(project.id)).map(project => ({ ...project, folder_path: projectFolderOverrides[project.id] ?? project.folder_path })), [projects, created, deletedProjectIds, projectFolderOverrides])
   const filteredProjects = useMemo(() => filterAndSortProjects(visibleProjects, projectQuery, projectSort), [visibleProjects, projectQuery, projectSort])
   const projectFolderTree = useMemo(() => buildProjectFolderTree(filteredProjects), [filteredProjects])
   const projectFolderPaths = useMemo(() => collectProjectFolderPaths(projectFolderTree), [projectFolderTree])
@@ -171,6 +176,9 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     setFolderDraft(selected.folder_path)
     setFolderMessage('')
     setFolderError('')
+    setShowDeleteProject(false)
+    setDeleteConfirmation('')
+    setDeleteError('')
     setExportFolder(safeExportFolderName(selected.name))
     setExportMessage('')
     setExportError('')
@@ -219,6 +227,21 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     finally { setFolderSaving(false) }
   }
   const toggleProjectFolder = (path: string) => setExpandedProjectFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
+  const deleteProject = async () => {
+    if (!selected || deletingProject || deleteConfirmation !== selected.name) return
+    const deletedName = selected.name
+    const nextProject = visibleProjects.find(project => project.id !== selected.id)
+    setDeletingProject(true); setDeleteError('')
+    try {
+      await request<void>(`/projects/${selected.id}`, { method: 'DELETE', body: JSON.stringify({ project_name: deleteConfirmation }) })
+      setDeletedProjectIds(current => [...current, selected.id])
+      setCreated(current => current.filter(project => project.id !== selected.id))
+      setSelectedId(nextProject?.id ?? '')
+      setShowDeleteProject(false); setDeleteConfirmation(''); setMessage(`${deletedName} 프로젝트를 삭제했습니다.`)
+      onRefresh()
+    } catch (cause) { setDeleteError(errorText(cause, '프로젝트를 삭제하지 못했습니다.')) }
+    finally { setDeletingProject(false) }
+  }
   const addLabel = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSchemaMessage(''); setSchemaError('')
     const form = event.currentTarget; const data = new FormData(form)
@@ -431,6 +454,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   function clearNotices() { setMessage(''); setError('') }
 
   const availableMembers = users.filter(user => user.role !== 'ADMINISTRATOR' && !members.some(member => member.user_id === user.id))
+  const canDeleteProject = !!selected && (actor.role === 'ADMINISTRATOR' || selected.created_by === actor.id)
   const presetChildren = childrenInPresetFolder(presetNodes, presetFolderId)
   const presetTrail = presetFolderTrail(presetNodes, presetFolderId)
   return <>
@@ -553,6 +577,11 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
             {assignmentError && <div className="error-banner assignment-notice" role="alert">{assignmentError}</div>}
           </div>}
           {loadingAssets ? <div className="empty">영상을 불러오는 중입니다.</div> : assets.length ? <div className="asset-folder-tree"><AssetFolderTreeNode node={assetFolderTree} depth={0} expanded={expandedAssetFolderSet} selectedAssetIds={selectedAssetIds} taskByAsset={taskByAsset} users={users} onToggleOpen={toggleAssetFolderOpen} onToggleFolder={toggleAssetFolder} onToggleAsset={toggleAsset} /></div> : <div className="empty">등록된 영상이 없습니다.</div>}
+        </section>
+        <section className="panel project-danger-zone">
+          <div><span className="eyebrow">DANGER ZONE</span><h2>프로젝트 삭제</h2><p>프로젝트와 관련 작업을 모든 사용자 목록에서 제거합니다. 의료 데이터와 감사 기록은 서버에 안전하게 보존됩니다.</p></div>
+          {canDeleteProject ? <button className="danger" onClick={() => { setShowDeleteProject(value => !value); setDeleteConfirmation(''); setDeleteError('') }}><Trash2 />{showDeleteProject ? '삭제 취소' : '프로젝트 삭제'}</button> : <span className="muted">Sudo 관리자 또는 프로젝트 생성자만 삭제할 수 있습니다.</span>}
+          {showDeleteProject && canDeleteProject && <div className="project-delete-confirm"><strong>삭제하려면 프로젝트 이름을 정확히 입력하세요.</strong><code>{selected.name}</code><input value={deleteConfirmation} onChange={event => setDeleteConfirmation(event.target.value)} placeholder={selected.name} aria-label="삭제할 프로젝트 이름 확인" autoComplete="off" /><button className="danger" onClick={() => void deleteProject()} disabled={deletingProject || deleteConfirmation !== selected.name}><Trash2 />{deletingProject ? '삭제 중…' : '이름 확인 후 삭제'}</button>{deleteError && <div className="error-banner">{deleteError}</div>}</div>}
         </section>
       </> : <div className="empty panel">프로젝트를 생성하거나 선택하세요.</div>}</div>
     </div>

@@ -19,6 +19,7 @@ from app.services.export_service import ExportService
 from app.services.label_preset_service import LabelPresetService, serialize_preset_node
 from app.services.project_service import ProjectService
 from app.services.project_data_service import ProjectDataService
+from app.services.project_purge_service import ProjectPurgeService
 from app.services.review_service import ReviewService
 
 router = APIRouter(prefix="/api/v1")
@@ -80,8 +81,24 @@ def projects(db: Session = Depends(get_db), actor: User = Depends(current_user))
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).create_project(actor, payload)
 
 
+@router.get("/projects/deleted", response_model=list[ProjectOut])
+def deleted_projects(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)):
+    return ProjectPurgeService(db, settings).list_deleted(actor)
+
+
+@router.delete("/projects/deleted/{project_id}", response_model=ProjectPurgeOut)
+def permanently_delete_project(project_id: str, payload: ProjectDeleteRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)):
+    return ProjectPurgeService(db, settings).purge(actor, project_id, payload)
+
+
 @router.get("/projects/{project_id}", response_model=ProjectOut)
 def project(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).get_project(actor, project_id)
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: str, payload: ProjectDeleteRequest, db: Session = Depends(get_db), actor: User = Depends(current_user)) -> Response:
+    ProjectService(db).delete_project(actor, project_id, payload)
+    return Response(status_code=204)
 
 
 @router.patch("/projects/{project_id}/preview-settings", response_model=ProjectOut)

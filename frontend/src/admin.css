@@ -47,7 +47,35 @@
 .project-folder-fields label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .project-folder-fields input { min-width: 0; }
 .project-folder-fields button { min-height: 42px; white-space: nowrap; }
+.project-danger-zone { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; border-color: #60313d; background: #1a1117cc; }
+.project-danger-zone h2 { margin: 4px 0 6px; color: #ffadba; font-size: 19px; }
+.project-danger-zone p { margin: 0; color: var(--muted); font-size: 11px; }
+.project-danger-zone > .danger { min-width: 150px; }
+.project-delete-confirm { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 9px; padding: 14px; border: 1px solid #743746; border-radius: 9px; background: #260f17; }
+.project-delete-confirm > strong { grid-column: 1 / -1; color: #ffc0ca; font-size: 12px; }
+.project-delete-confirm code { overflow: hidden; padding: 10px; border-radius: 6px; background: #13090d; color: #ff9cac; text-overflow: ellipsis; white-space: nowrap; }
+.project-delete-confirm input { min-width: 0; border-color: #743746; }
+.project-delete-confirm > button { min-height: 42px; white-space: nowrap; }
+.project-delete-confirm .error-banner { grid-column: 1 / -1; margin: 2px 0 0; }
 .admin-tabs button.active { border-color: var(--teal); background: #17322f; color: #8ef3e4; }
+.deleted-projects-panel { max-width: 1050px; }
+.permanent-delete-warning { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; padding: 14px; border: 1px solid #74404b; border-radius: 9px; background: #251118; color: #ffb6c2; }
+.permanent-delete-warning > svg { flex: 0 0 auto; width: 21px; }
+.permanent-delete-warning > div { display: flex; flex-direction: column; gap: 4px; }
+.permanent-delete-warning span { color: #b998a0; font-size: 11px; }
+.deleted-projects-empty { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border: 1px dashed #29434e; border-radius: 9px; color: var(--muted); }
+.deleted-projects-empty > svg { width: 25px; }
+.deleted-project-list { display: flex; flex-direction: column; gap: 9px; }
+.deleted-project-card { border: 1px solid #3e2c34; border-radius: 9px; background: #121016; overflow: hidden; }
+.deleted-project-summary { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 14px; }
+.deleted-project-summary > div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.deleted-project-summary small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.deleted-project-summary .danger { white-space: nowrap; }
+.permanent-delete-confirm { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 9px; padding: 14px; border-top: 1px solid #5f3340; background: #260f17; }
+.permanent-delete-confirm > strong { grid-column: 1 / -1; color: #ffc0ca; font-size: 12px; }
+.permanent-delete-confirm code { overflow: hidden; padding: 10px; border-radius: 6px; background: #13090d; color: #ff9cac; text-overflow: ellipsis; white-space: nowrap; }
+.permanent-delete-confirm input { min-width: 0; border-color: #743746; }
+.permanent-delete-confirm .error-banner { grid-column: 1 / -1; margin: 2px 0 0; }
 .admin-user-layout { display: grid; grid-template-columns: minmax(340px, .8fr) minmax(480px, 1.2fr); gap: 18px; }
 .admin-form { display: flex; flex-direction: column; gap: 14px; }
 .admin-form label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 700; }

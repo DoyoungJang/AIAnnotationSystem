@@ -2,7 +2,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.entities import AnnotationTask, Review, Role, TaskStatus, User
+from app.models.entities import AnnotationTask, Project, Review, Role, TaskStatus, User
 from app.schemas.api import ReviewRequest
 from app.services.audit_service import AuditService
 
@@ -17,6 +17,9 @@ class ReviewService:
         task = self.db.get(AnnotationTask, task_id)
         if task is None:
             raise HTTPException(404, "작업을 찾을 수 없습니다.")
+        project = self.db.get(Project, task.project_id)
+        if project is None or project.status == "DELETED":
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
         if actor.role not in {Role.ADMINISTRATOR, Role.PROJECT_MANAGER, Role.REVIEWER} or (actor.role == Role.REVIEWER and task.reviewer_id != actor.id):
             raise HTTPException(403, "검수 권한이 없습니다.")
         if task.status not in {TaskStatus.SUBMITTED, TaskStatus.IN_REVIEW}:
