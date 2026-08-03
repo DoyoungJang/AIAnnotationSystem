@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Archive, ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, Eye, FileDown, FileImage, Folder, FolderPlus, Library, Pencil, Plus, RotateCcw, Save, ShieldAlert, ShieldCheck, Trash2, Upload, UserCog, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, Eye, FileDown, FileImage, Folder, FolderPlus, Library, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, ShieldCheck, Trash2, Upload, UserCog, X } from 'lucide-react'
 import { ApiError, downloadExport, request } from '../api/client'
 import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
 export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
+export type ProjectSort = 'recent' | 'name'
 export interface AssetFolderNode { name: string; path: string; assets: Asset[]; children: AssetFolderNode[] }
 
 const ROOT_ASSET_FOLDER_PATH = '__all_assets__'
@@ -100,11 +101,22 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [previewSaving, setPreviewSaving] = useState(false)
   const [previewMessage, setPreviewMessage] = useState('')
   const [previewError, setPreviewError] = useState('')
+  const [projectQuery, setProjectQuery] = useState('')
+  const [projectSort, setProjectSort] = useState<ProjectSort>('recent')
+  const [showCreateProject, setShowCreateProject] = useState(false)
   const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))], [projects, created])
+  const filteredProjects = useMemo(() => filterAndSortProjects(visibleProjects, projectQuery, projectSort), [visibleProjects, projectQuery, projectSort])
+  const taskCountByProject = useMemo(() => tasks.reduce<Record<string, number>>((counts, task) => {
+    counts[task.project_id] = (counts[task.project_id] ?? 0) + 1
+    return counts
+  }, {}), [tasks])
   const selectedProject = visibleProjects.find(project => project.id === selectedId) ?? visibleProjects[0]
   const selected = selectedProject ? { ...selectedProject, show_task_thumbnails: previewOverrides[selectedProject.id] ?? selectedProject.show_task_thumbnails } : undefined
 
   useEffect(() => { if (!selectedId && visibleProjects[0]) setSelectedId(visibleProjects[0].id) }, [selectedId, visibleProjects])
+  useEffect(() => {
+    if (projectQuery.trim() && filteredProjects.length && !filteredProjects.some(project => project.id === selectedId)) setSelectedId(filteredProjects[0].id)
+  }, [filteredProjects, projectQuery, selectedId])
   useEffect(() => {
     let active = true
     setPresetLoading(true)
@@ -162,7 +174,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     const form = event.currentTarget; const data = new FormData(form)
     try {
       const project = await request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), task_types: ['classification', 'bbox', 'polygon', 'brush'] }) })
-      setCreated(items => [project, ...items]); setSelectedId(project.id); form.reset(); setMessage('프로젝트를 생성했습니다.'); onRefresh()
+      setCreated(items => [project, ...items]); setSelectedId(project.id); setProjectQuery(''); setShowCreateProject(false); form.reset(); setMessage('프로젝트를 생성했습니다.'); onRefresh()
     } catch (cause) { setError(errorText(cause, '프로젝트를 생성하지 못했습니다.')) }
   }
   const updatePreviewSetting = async (showTaskThumbnails: boolean) => {
@@ -393,9 +405,20 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   return <>
     {message && <div className="success-banner">{message}</div>}{error && <div className="error-banner">{error}</div>}
     <div className="project-layout">
-      <section className="panel project-list"><div className="panel-heading"><h2>프로젝트</h2></div>
-        {visibleProjects.map(project => <button className={selected?.id === project.id ? 'project-item active' : 'project-item'} onClick={() => setSelectedId(project.id)} key={project.id}><span className="project-dot" /><div><strong>{project.name}</strong><small>{project.description || '설명 없음'}</small></div></button>)}
-        <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" required /><input name="description" placeholder="설명" /><button className="primary"><Plus /> 생성</button></form>
+      <section className="panel project-list">
+        <header className="project-list-heading"><div><span className="eyebrow">PROJECTS</span><h2>프로젝트</h2></div><span>{filteredProjects.length === visibleProjects.length ? `${visibleProjects.length}개` : `${filteredProjects.length} / ${visibleProjects.length}개`}</span></header>
+        <div className="project-list-controls">
+          <div className="project-search"><Search /><input value={projectQuery} onChange={event => setProjectQuery(event.target.value)} placeholder="이름 또는 설명 검색" aria-label="프로젝트 검색" />{projectQuery && <button type="button" onClick={() => setProjectQuery('')} aria-label="검색어 지우기"><X /></button>}</div>
+          <select value={projectSort} onChange={event => setProjectSort(event.target.value as ProjectSort)} aria-label="프로젝트 정렬"><option value="recent">최근 수정순</option><option value="name">이름순</option></select>
+        </div>
+        <div className="project-list-scroll" aria-label="프로젝트 목록">
+          {filteredProjects.map(project => <button className={selected?.id === project.id ? 'project-item active' : 'project-item'} onClick={() => setSelectedId(project.id)} key={project.id}><span className="project-dot" /><div><strong title={project.name}>{project.name}</strong><small title={project.description}>{project.description || '설명 없음'}</small></div><span className="project-task-count" title="배정 작업 수">{taskCountByProject[project.id] ?? 0}</span></button>)}
+          {!filteredProjects.length && <div className="project-list-empty"><Search /><strong>검색 결과가 없습니다.</strong><small>다른 이름이나 설명으로 검색해 보세요.</small><button onClick={() => setProjectQuery('')}>전체 프로젝트 보기</button></div>}
+        </div>
+        <footer className="project-list-footer">
+          <button className="project-create-toggle" onClick={() => setShowCreateProject(value => !value)} aria-expanded={showCreateProject}>{showCreateProject ? <X /> : <Plus />}{showCreateProject ? '취소' : '새 프로젝트'}</button>
+          {showCreateProject && <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" maxLength={160} autoFocus required /><input name="description" placeholder="설명 (선택)" maxLength={4000} /><button className="primary"><Plus /> 프로젝트 생성</button></form>}
+        </footer>
       </section>
       <div className="project-details">{selected ? <>
         <section className="panel project-preview-policy">
@@ -660,6 +683,15 @@ export function canDeletePresetNode(actor: User, nodes: LabelPresetNode[], node:
 
 export function safeExportFolderName(value: string): string {
   return value.trim().replaceAll('/', '_').replace(/[<>:"\\|?*\u0000-\u001f]+/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'project-export'
+}
+
+export function filterAndSortProjects(projects: Project[], query: string, sort: ProjectSort): Project[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR')
+  return projects
+    .filter(project => !normalizedQuery || `${project.name} ${project.description}`.toLocaleLowerCase('ko-KR').includes(normalizedQuery))
+    .sort((left, right) => sort === 'name'
+      ? left.name.localeCompare(right.name, 'ko', { numeric: true })
+      : (Date.parse(right.updated_at) || 0) - (Date.parse(left.updated_at) || 0) || left.name.localeCompare(right.name, 'ko', { numeric: true }))
 }
 
 function exportFormatName(format: ExportJob['format']): string {

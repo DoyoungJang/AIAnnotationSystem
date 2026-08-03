@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Asset, Label, LabelPresetNode } from '../types'
-import { buildAssetFolderTree, buildAssignmentBatches, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, moveDraftLabel, normalizeLabelCode, presetDescendantIds, presetFolderTrail, replaceDraftLabel, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
+import type { Asset, Label, LabelPresetNode, Project } from '../types'
+import { buildAssetFolderTree, buildAssignmentBatches, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, filterAndSortProjects, groupAssetsByFolder, moveDraftLabel, normalizeLabelCode, presetDescendantIds, presetFolderTrail, replaceDraftLabel, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -140,5 +140,25 @@ describe('export folder defaults', () => {
 
   it('uses a fallback when the project name cannot form a folder', () => {
     expect(safeExportFolderName('...')).toBe('project-export')
+  })
+})
+
+describe('large project list navigation', () => {
+  const projects = [
+    { id: '2', name: '갑상선 10', description: '내분비 영상', updated_at: '2026-08-01T00:00:00Z' },
+    { id: '1', name: '유방 2', description: 'Breast follow-up', updated_at: '2026-08-03T00:00:00Z' },
+    { id: '3', name: '유방 1', description: '초기 검사', updated_at: '2026-08-02T00:00:00Z' },
+  ] as Project[]
+
+  it('searches both project names and descriptions', () => {
+    expect(filterAndSortProjects(projects, '유방', 'recent').map(project => project.id)).toEqual(['1', '3'])
+    expect(filterAndSortProjects(projects, '내분비', 'recent').map(project => project.id)).toEqual(['2'])
+    expect(filterAndSortProjects(projects, 'breast', 'recent').map(project => project.id)).toEqual(['1'])
+  })
+
+  it('supports recent and natural name ordering without mutating input', () => {
+    expect(filterAndSortProjects(projects, '', 'recent').map(project => project.id)).toEqual(['1', '3', '2'])
+    expect(filterAndSortProjects(projects, '', 'name').map(project => project.name)).toEqual(['갑상선 10', '유방 1', '유방 2'])
+    expect(projects.map(project => project.id)).toEqual(['2', '1', '3'])
   })
 })

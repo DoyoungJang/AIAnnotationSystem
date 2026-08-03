@@ -18,7 +18,7 @@ interface Props {
   user: User
   onClose: () => void
   onNavigate: (task: Task) => void
-  onChanged: () => void
+  onChanged: (task?: Task) => void
   onUserChanged: () => void
 }
 
@@ -43,7 +43,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
   const [shortcutError, setShortcutError] = useState('')
   const [revisionStarting, setRevisionStarting] = useState(false)
   const { annotations, deletedAnnotationIds, load, add, remove, selectedLabel, setLabel, dirty, markSaved, setTool } = useAnnotationStore()
-  const submittedByAnnotator = user.role === 'ANNOTATOR' && task.status === 'SUBMITTED'
+  const submittedByAssignee = task.assigned_to === user.id && task.status === 'SUBMITTED'
   const readOnly = isTaskReadOnly(task, user)
   const auto = useAutoSave(task.id, annotations, deletedAnnotationIds, dirty, version, setVersion, markSaved)
   const labelBindings = useMemo(() => labels.map((label, index) => ({ label, shortcut: labelShortcut(label, index) })), [labels])
@@ -135,7 +135,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
     try {
       const updated = await request<Task>(`/tasks/${task.id}/submit`, { method: 'POST' })
       setTask(updated)
-      onChanged()
+      onChanged(updated)
       if (nextTask) onNavigate(nextTask)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '제출하지 못했습니다.')
@@ -143,12 +143,13 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
   }
 
   const startRevision = async () => {
-    if (!submittedByAnnotator || revisionStarting) return
+    if (!submittedByAssignee || revisionStarting) return
     setRevisionStarting(true)
     setError('')
     try {
       const editableTask = await request<Task>(`/tasks/${task.id}/lock`, { method: 'POST' })
       setTask(editableTask)
+      onChanged(editableTask)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '수정 모드로 전환하지 못했습니다.')
     } finally {
@@ -173,7 +174,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
     try {
       const updated = await request<Task>(`/tasks/${task.id}/review`, { method: 'POST', body: JSON.stringify({ decision, comment }) })
       setTask(updated)
-      onChanged()
+      onChanged(updated)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '검수 결과를 저장하지 못했습니다.')
     }
@@ -244,7 +245,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
       <div className={`save-state ${auto.state}`} title={auto.message}><span />{({ idle: '변경 없음', saving: '저장 중…', saved: '저장됨', offline: '오프라인 임시 저장', conflict: '버전 충돌', error: '저장 실패' } as const)[auto.state]}</div>
       <button onClick={() => { setShortcutDraft(shortcutSettings); setShortcutError(''); setShowShortcutSettings(value => !value) }} title="사용자 단축키 설정"><Keyboard /> 단축키</button>
       <button onClick={() => void auto.save()} disabled={!dirty || readOnly}><Save /> 저장</button>
-      {submittedByAnnotator ? <button className="primary" onClick={() => void startRevision()} disabled={revisionStarting}><Pencil /> {revisionStarting ? '전환 중…' : '수정'}</button> : !readOnly && <button className="primary" onClick={() => void submit()}><Send /> 제출 <kbd>{displayShortcut(shortcutSettings.submit)}</kbd></button>}
+      {submittedByAssignee ? <button className="primary" onClick={() => void startRevision()} disabled={revisionStarting}><Pencil /> {revisionStarting ? '전환 중…' : '수정'}</button> : !readOnly && <button className="primary" onClick={() => void submit()}><Send /> 제출 <kbd>{displayShortcut(shortcutSettings.submit)}</kbd></button>}
       {user.role === 'REVIEWER' && task.status === 'SUBMITTED' && <><button className="danger" onClick={() => void decide('CHANGES_REQUESTED')}><X /> 수정 요청</button><button className="primary" onClick={() => void decide('APPROVED')}><Check /> 승인</button></>}
       {showShortcutSettings && <div className="shortcut-popover">
         <div className="shortcut-heading"><div><span className="eyebrow">MY SHORTCUTS</span><h3>내 단축키 설정</h3></div><button onClick={() => setShowShortcutSettings(false)} aria-label="닫기"><X /></button></div>

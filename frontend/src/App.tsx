@@ -19,6 +19,10 @@ export default function App() {
   const { data: tasks = [] } = useQuery({ queryKey: ['tasks'], queryFn: () => request<Task[]>('/tasks/my'), enabled: !!user })
   const isManager = !!user && (user.role === 'ADMINISTRATOR' || user.role === 'PROJECT_MANAGER')
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => request<User[]>('/users'), enabled: isManager, retry: false })
+  const taskChanged = (updated?: Task) => {
+    if (updated) queryClient.setQueryData<Task[]>(['tasks'], current => current?.map(task => task.id === updated.id ? { ...task, ...updated } : task) ?? [])
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+  }
 
   useEffect(() => {
     if (error) {
@@ -30,7 +34,7 @@ export default function App() {
   if (!authenticated || !user) return <Login onLogin={() => { setPage('dashboard'); setOpenTask(undefined); setAuthenticated(true) }} />
   if (openTask) {
     const adjacentTasks = adjacentTasksInSameFolder(tasks, openTask)
-    return <TaskWorkspace key={openTask.id} initialTask={openTask} previousTask={adjacentTasks.previous} nextTask={adjacentTasks.next} user={user} onClose={() => setOpenTask(undefined)} onNavigate={setOpenTask} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} onUserChanged={() => void queryClient.invalidateQueries({ queryKey: ['me'] })} />
+    return <TaskWorkspace key={openTask.id} initialTask={openTask} previousTask={adjacentTasks.previous} nextTask={adjacentTasks.next} user={user} onClose={() => setOpenTask(undefined)} onNavigate={setOpenTask} onChanged={taskChanged} onUserChanged={() => void queryClient.invalidateQueries({ queryKey: ['me'] })} />
   }
 
   const refresh = () => {
