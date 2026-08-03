@@ -169,7 +169,7 @@ class TaskCreate(BaseModel):
 
 
 class TaskBatchCreate(BaseModel):
-    media_asset_ids: list[str] = Field(min_length=1, max_length=1000)
+    media_asset_ids: list[str] = Field(min_length=1)
     assigned_to: str | None = None
     reviewer_id: str | None = None
     priority: int = Field(default=0, ge=0, le=100)
