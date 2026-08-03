@@ -1,4 +1,5 @@
 """Original preservation and raster import tests."""
+import hashlib
 from io import BytesIO
 from pathlib import Path
 
@@ -42,6 +43,23 @@ def test_import_keeps_identical_content_at_different_folder_paths(tmp_path: Path
         ])
         assert duplicates == 0
         assert [asset.relative_path for asset in assets] == ["root/benign/sample.png", "root/malignant/sample.png"]
+
+
+def test_import_appends_chunks_to_one_dataset(tmp_path: Path) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    first = BytesIO(); Image.new("L", (32, 24), 40).save(first, "PNG")
+    second = BytesIO(); Image.new("L", (32, 24), 80).save(second, "PNG")
+    settings = Settings(secret_key="x" * 32, storage_root=tmp_path / "storage", export_root=tmp_path / "exports", _env_file=None)
+    with Session(engine) as db:
+        admin = User(username="admin", display_name="Admin", role=Role.ADMINISTRATOR, password_hash="x"); db.add(admin); db.flush()
+        project = Project(name="P", task_types=["bbox"], created_by=admin.id); db.add(project); db.commit()
+        dataset, first_assets, _ = DatasetService(db, settings).import_files(admin, project.id, "D", [("root/one.png", "image/png", first.getvalue())])
+        appended, second_assets, _ = DatasetService(db, settings).import_files(admin, project.id, "D", [("root/two.png", "image/png", second.getvalue())], dataset_id=dataset.id)
+        assert appended.id == dataset.id
+        assert [asset.relative_path for asset in first_assets + second_assets] == ["root/one.png", "root/two.png"]
+        expected_manifest = hashlib.sha256("".join(sorted(f"{asset.relative_path}\0{asset.checksum}" for asset in first_assets + second_assets)).encode()).hexdigest()
+        assert appended.manifest_hash == expected_manifest
 
 
 def test_relative_path_rejects_path_traversal_and_absolute_paths() -> None:

@@ -110,11 +110,11 @@ def delete_label_preset_node(node_id: str, db: Session = Depends(get_db), actor:
 
 
 @router.post("/projects/{project_id}/datasets/import", response_model=ImportOut, status_code=201)
-def import_dataset(project_id: str, dataset_name: str = Form(...), files: list[UploadFile] = File(...), relative_paths: list[str] = Form(default=[]), db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)):
+def import_dataset(project_id: str, dataset_name: str = Form(...), files: list[UploadFile] = File(...), relative_paths: list[str] = Form(default=[]), dataset_id: str | None = Form(default=None), db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)):
     if relative_paths and len(relative_paths) != len(files):
         raise HTTPException(422, "파일 수와 상대 경로 수가 일치하지 않습니다.")
     values = [(relative_paths[index] if relative_paths else file.filename or "upload", file.content_type, file.file.read()) for index, file in enumerate(files)]
-    dataset, assets, duplicate_count = DatasetService(db, settings).import_files(actor, project_id, dataset_name, values)
+    dataset, assets, duplicate_count = DatasetService(db, settings).import_files(actor, project_id, dataset_name, values, dataset_id=dataset_id)
     return ImportOut(dataset_id=dataset.id, assets=assets, duplicate_count=duplicate_count)
 
 

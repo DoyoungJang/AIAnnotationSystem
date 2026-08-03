@@ -37,11 +37,16 @@ class DatasetService:
             raise HTTPException(403, "이 프로젝트에 접근할 권한이 없습니다.")
         return project
 
-    def import_files(self, actor: User, project_id: str, dataset_name: str, files: list[tuple[str, str | None, bytes]]) -> tuple[Dataset, list[MediaAsset], int]:
+    def import_files(self, actor: User, project_id: str, dataset_name: str, files: list[tuple[str, str | None, bytes]], dataset_id: str | None = None) -> tuple[Dataset, list[MediaAsset], int]:
         self._require_manage(actor, project_id)
-        dataset = Dataset(project_id=project_id, name=dataset_name)
-        self.db.add(dataset)
-        self.db.flush()
+        if dataset_id:
+            dataset = self.db.get(Dataset, dataset_id)
+            if dataset is None or dataset.project_id != project_id:
+                raise HTTPException(404, "Upload dataset not found in this project.")
+        else:
+            dataset = Dataset(project_id=project_id, name=dataset_name)
+            self.db.add(dataset)
+            self.db.flush()
         assets: list[MediaAsset] = []
         duplicates = 0
         for original_name, content_type, data in files:
@@ -87,7 +92,8 @@ class DatasetService:
             self.storage.put(thumbnail_key, buffer.getvalue())
             asset = MediaAsset(dataset_id=dataset.id, series_id=series.id, sop_instance_uid=info.sop_uid, storage_key=storage_key, media_type=info.media_type, original_filename=Path(relative_path).name, relative_path=relative_path, width=info.width, height=info.height, frame_count=info.frame_count, checksum=checksum, thumbnail_key=thumbnail_key, phi_suspected=bool(info.phi_tags))
             self.db.add(asset); self.db.flush(); assets.append(asset)
-        dataset.manifest_hash = hashlib.sha256("".join(sorted(f"{a.relative_path}\0{a.checksum}" for a in assets)).encode()).hexdigest()
+        manifest_assets = list(self.db.scalars(select(MediaAsset).where(MediaAsset.dataset_id == dataset.id)).all())
+        dataset.manifest_hash = hashlib.sha256("".join(sorted(f"{a.relative_path}\0{a.checksum}" for a in manifest_assets)).encode()).hexdigest()
         self.audit.record(actor, "DATASET_IMPORTED", "dataset", dataset.id, project_id, f"Imported {len(assets)} assets; {duplicates} duplicates skipped")
         self.db.commit()
         return dataset, assets, duplicates

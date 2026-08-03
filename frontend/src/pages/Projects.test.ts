@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Asset, LabelPresetNode } from '../types'
-import { buildAssetFolderTree, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
+import { buildAssetFolderTree, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -49,6 +49,18 @@ describe('folder-preserving asset display', () => {
     expect(collectFolderAssets(breast).map(asset => asset.id)).toEqual(['benign', 'malignant', 'assigned'])
     expect(toggleFolderAssetSelection([], breast, new Set(['assigned']))).toEqual(['benign', 'malignant'])
     expect(toggleFolderAssetSelection(['benign', 'malignant'], breast, new Set(['assigned']))).toEqual([])
+  })
+})
+
+describe('folder upload batching', () => {
+  it('splits a folder larger than the multipart parser file limit', () => {
+    const files = Array.from({ length: 1578 }, () => ({ size: 1 }))
+    expect(buildUploadBatches(files).map(batch => batch.length)).toEqual([200, 200, 200, 200, 200, 200, 200, 178])
+  })
+
+  it('keeps requests below the configured byte limit while allowing one oversized file', () => {
+    const files = [{ size: 40 }, { size: 30 }, { size: 120 }, { size: 10 }]
+    expect(buildUploadBatches(files, 10, 64).map(batch => batch.map(file => file.size))).toEqual([[40], [30], [120], [10]])
   })
 })
 

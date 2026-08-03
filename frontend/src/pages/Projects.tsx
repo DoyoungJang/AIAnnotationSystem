@@ -9,6 +9,28 @@ export interface AssetFolderNode { name: string; path: string; assets: Asset[]; 
 const ROOT_ASSET_FOLDER_PATH = '__all_assets__'
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff', 'dcm', 'dicom'])
+const UPLOAD_BATCH_FILE_LIMIT = 200
+const UPLOAD_BATCH_BYTE_LIMIT = 64 * 1024 * 1024
+
+interface ImportResult { dataset_id: string; assets: Asset[]; duplicate_count: number }
+
+export function buildUploadBatches<T extends { size: number }>(files: T[], maxFiles = UPLOAD_BATCH_FILE_LIMIT, maxBytes = UPLOAD_BATCH_BYTE_LIMIT): T[][] {
+  if (maxFiles < 1 || maxBytes < 1) throw new RangeError('Upload batch limits must be positive.')
+  const batches: T[][] = []
+  let batch: T[] = []
+  let batchBytes = 0
+  for (const file of files) {
+    if (batch.length && (batch.length >= maxFiles || batchBytes + file.size > maxBytes)) {
+      batches.push(batch)
+      batch = []
+      batchBytes = 0
+    }
+    batch.push(file)
+    batchBytes += file.size
+  }
+  if (batch.length) batches.push(batch)
+  return batches
+}
 
 const DEFAULT_LABELS: Label[] = [
   { label_code: 'FETAL_HEAD', label_name: '태아 머리', annotation_type: 'polygon', color: '#36d6c2', required: true, shortcut: '1' },
@@ -43,6 +65,10 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [memberId, setMemberId] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const [folderSelection, setFolderSelection] = useState('선택된 폴더 없음')
   const [loadingAssets, setLoadingAssets] = useState(false)
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
   const [expandedAssetFolders, setExpandedAssetFolders] = useState<string[]>([ROOT_ASSET_FOLDER_PATH])
@@ -167,25 +193,45 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     } catch (cause) { setPresetError(errorText(cause, '프리셋 항목을 삭제하지 못했습니다.')) }
   }
   const upload = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!selected) return; clearNotices()
+    event.preventDefault(); if (!selected || uploading) return; clearNotices(); setUploadError(''); setUploadStatus('')
     const form = event.currentTarget
     const formValues = new FormData(form)
     const input = form.elements.namedItem('files') as HTMLInputElement | null
     const selectedFiles = Array.from(input?.files ?? [])
     const files = selectedFiles.filter(file => SUPPORTED_IMAGE_EXTENSIONS.has(file.name.split('.').pop()?.toLowerCase() ?? ''))
-    if (!files.length) { setError('PNG, JPG, TIFF 또는 DICOM 파일이 들어 있는 폴더를 선택하세요.'); return }
-    const payload = new FormData()
-    payload.append('dataset_name', String(formValues.get('dataset_name') ?? '').trim())
-    files.forEach(file => {
-      payload.append('files', file, file.name)
-      payload.append('relative_paths', file.webkitRelativePath || file.name)
-    })
+    if (!files.length) { setUploadError('PNG, JPG, TIFF 또는 DICOM 파일이 들어 있는 폴더를 선택하세요.'); return }
+    const datasetName = String(formValues.get('dataset_name') ?? '').trim()
+    const batches = buildUploadBatches(files)
+    let datasetId: string | undefined
+    let duplicateCount = 0
+    let transferredFiles = 0
+    const importedAssets: Asset[] = []
+    setUploading(true)
     try {
-      const result = await request<{ assets: Asset[]; duplicate_count: number }>(`/projects/${selected.id}/datasets/import`, { method: 'POST', body: payload })
-      setAssets(current => [...result.assets, ...current.filter(item => !result.assets.some(added => added.id === item.id))])
+      for (let index = 0; index < batches.length; index += 1) {
+        const payload = new FormData()
+        payload.append('dataset_name', datasetName)
+        if (datasetId) payload.append('dataset_id', datasetId)
+        batches[index].forEach(file => {
+          payload.append('files', file, file.name)
+          payload.append('relative_paths', file.webkitRelativePath || file.name)
+        })
+        transferredFiles += batches[index].length
+        setUploadStatus(`${files.length}개 파일 중 ${transferredFiles}개 전송 중 (${index + 1}/${batches.length})`)
+        const result = await request<ImportResult>(`/projects/${selected.id}/datasets/import`, { method: 'POST', body: payload })
+        datasetId = result.dataset_id
+        duplicateCount += result.duplicate_count
+        importedAssets.push(...result.assets)
+      }
+      setAssets(current => [...importedAssets, ...current.filter(item => !importedAssets.some(added => added.id === item.id))])
       const unsupported = selectedFiles.length - files.length
-      setMessage(`${result.assets.length}개 영상 등록, 중복 ${result.duplicate_count}개 제외${unsupported ? `, 미지원 파일 ${unsupported}개 제외` : ''}. 폴더 구조를 그대로 보존했습니다.`); form.reset()
-    } catch (cause) { setError(errorText(cause, '데이터를 등록하지 못했습니다.')) }
+      setUploadStatus(`${importedAssets.length}개 영상 등록, 중복 ${duplicateCount}개 제외${unsupported ? `, 미지원 파일 ${unsupported}개 제외` : ''}. 폴더 구조를 그대로 보존했습니다.`)
+      form.reset(); setFolderSelection('선택된 폴더 없음')
+    } catch (cause) {
+      if (importedAssets.length) setAssets(current => [...importedAssets, ...current.filter(item => !importedAssets.some(added => added.id === item.id))])
+      setUploadError(`${errorText(cause, '데이터를 등록하지 못했습니다.')}${importedAssets.length ? ` (${importedAssets.length}개까지 등록됨)` : ''}`)
+      setUploadStatus('')
+    } finally { setUploading(false) }
   }
   const createExport = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!selected) return
@@ -308,7 +354,28 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
           {exportError && <div className="error-banner export-notice" role="alert">{exportError}</div>}
           <div className="export-history">{exportJobs.slice(0, 8).map(job => <article key={job.id}><span className={`export-status ${job.status.toLowerCase()}`}>{job.status}</span><div><strong>{exportFormatName(job.format)}</strong><small>{job.storage_key ?? job.error ?? '저장 경로 준비 중'}</small></div><time>{new Date(job.created_at).toLocaleString('ko-KR')}</time><button onClick={() => downloadExportJob(job)} disabled={job.status !== 'COMPLETED'}><Download /> 내 PC로 ZIP 다운로드</button></article>)}{!exportJobs.length && <div className="empty">아직 저장한 결과가 없습니다.</div>}</div>
         </section>
-        <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div><div className="dataset-import-grid"><form className="upload-box" onSubmit={upload}><Upload /><strong>파일 선택 등록</strong><span>PNG, JPG, TIFF, DICOM 파일을 여러 개 선택합니다.</span><input name="dataset_name" defaultValue="MVP Dataset" aria-label="데이터셋 이름" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required /><button className="primary">선택 파일 등록</button></form><form className="upload-box folder-upload" onSubmit={upload}><Folder /><strong>폴더 전체 등록</strong><span>선택한 폴더의 하위 구조와 파일 경로를 그대로 보존합니다.</span><input name="dataset_name" defaultValue="Folder Dataset" aria-label="폴더 데이터셋 이름" required /><input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" ref={element => { if (element) { element.setAttribute('webkitdirectory', ''); element.setAttribute('directory', '') } }} onChange={event => { const first = event.currentTarget.files?.[0]; const root = first?.webkitRelativePath.split('/')[0]; const form = event.currentTarget.form; const nameInput = form?.elements.namedItem('dataset_name') as HTMLInputElement | null; if (root && nameInput) nameInput.value = root }} required /><button className="primary">폴더 구조 그대로 등록</button></form></div><p className="import-security-note">원본 파일은 변경하지 않고 난수화된 보호 저장소에 보관하며, 화면에는 안전하게 검증한 상대 폴더 경로만 표시합니다.</p></section>
+        <section className="panel">
+          <div className="panel-heading"><div><span className="eyebrow">PROTECTED IMPORT</span><h2>초음파 영상 등록</h2></div></div>
+          <div className="dataset-import-grid">
+            <form className="upload-box" onSubmit={upload}>
+              <Upload /><strong>파일 선택 등록</strong><span>PNG, JPG, TIFF, DICOM 파일을 여러 개 선택합니다.</span>
+              <input name="dataset_name" defaultValue="MVP Dataset" aria-label="데이터셋 이름" required />
+              <input name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" required />
+              <button className="primary" disabled={uploading}>{uploading ? '등록 중...' : '선택 파일 등록'}</button>
+            </form>
+            <form className="upload-box folder-upload" onSubmit={upload}>
+              <Folder /><strong>폴더 선택</strong><span>선택한 폴더의 하위 구조와 파일 경로를 그대로 보존합니다.</span>
+              <input name="dataset_name" defaultValue="Folder Dataset" aria-label="폴더 데이터셋 이름" required />
+              <input id="folder-upload-input" className="folder-file-input" name="files" type="file" multiple accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.dcm,.dicom" ref={element => { if (element) { element.setAttribute('webkitdirectory', ''); element.setAttribute('directory', '') } }} onChange={event => { const selectedFolderFiles = Array.from(event.currentTarget.files ?? []); const first = selectedFolderFiles[0]; const root = first?.webkitRelativePath.split('/')[0]; const form = event.currentTarget.form; const nameInput = form?.elements.namedItem('dataset_name') as HTMLInputElement | null; if (root && nameInput) nameInput.value = root; setFolderSelection(root ? `${root} · ${selectedFolderFiles.length}개 파일` : '선택된 폴더 없음') }} required />
+              <label className="folder-picker" htmlFor="folder-upload-input"><Folder /> 폴더 선택</label>
+              <span className="folder-selection-summary">{folderSelection}</span>
+              <button className="primary" disabled={uploading}>{uploading ? '등록 중...' : '폴더 구조 그대로 등록'}</button>
+            </form>
+          </div>
+          {uploadStatus && <div className="success-banner upload-notice" role="status">{uploadStatus}</div>}
+          {uploadError && <div className="error-banner upload-notice" role="alert">{uploadError}</div>}
+          <p className="import-security-note">원본 파일은 변경하지 않고 난수화된 보호 저장소에 보관하며, 화면에는 안전하게 검증한 상대 폴더 경로만 표시합니다.</p>
+        </section>
         <section className="panel assignment-panel"><div className="panel-heading"><div><span className="eyebrow">BATCH ASSIGNMENT</span><h2>등록 영상 및 작업 배정</h2></div><span>{assets.length}개 · 미배정 {selectableAssets.length}개</span></div>
           {assets.length > 0 && <div className="batch-assignment">
             <div className="selection-toolbar"><strong>{selectedAssetIds.length}개 선택</strong><button onClick={() => chooseAssets('all')}>전체 선택</button><button onClick={() => chooseAssets('odd')}>홀수 번째</button><button onClick={() => chooseAssets('even')}>짝수 번째</button><button onClick={() => chooseAssets('none')}>선택 해제</button></div>

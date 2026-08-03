@@ -9,6 +9,54 @@
   background: #091c1c;
 }
 
+.folder-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.folder-picker {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 10px 13px;
+  border: 1px solid #397268;
+  border-radius: 8px;
+  background: #102a28;
+  color: #9ceade;
+  cursor: pointer;
+}
+
+.folder-picker:hover {
+  border-color: var(--teal);
+  background: #153631;
+}
+
+.folder-picker svg {
+  width: 17px;
+  height: 17px;
+}
+
+.folder-selection-summary {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  color: #91aea9 !important;
+  overflow-wrap: anywhere;
+}
+
+.upload-notice {
+  margin: 14px 0 0;
+}
+
 .import-security-note {
   color: var(--muted);
   font-size: 12px;
