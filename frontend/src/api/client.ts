@@ -23,6 +23,7 @@ export async function imageUrl(assetId:string,thumbnail=false):Promise<string>{
 export async function downloadExport(exportId:string,filename:string):Promise<void>{
   const response=await fetch(`${API}/exports/${exportId}/download`,{headers:{Authorization:`Bearer ${token()}`}})
   if(!response.ok){let detail:unknown='내보내기 파일을 다운로드할 수 없습니다.';try{detail=(await response.json()).detail}catch{}throw new ApiError(response.status,detail)}
-  const blob=await response.blob();if(blob.type!=='application/zip'&&!filename.toLowerCase().endsWith('.zip'))throw new ApiError(500,'ZIP 내보내기 파일이 아닙니다.')
-  const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=filename.toLowerCase().endsWith('.zip')?filename:`${filename}.zip`;anchor.style.display='none';document.body.appendChild(anchor);anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),60_000)
+  const blob=await response.blob();const lower=filename.toLowerCase();const archiveName=lower.endsWith('.zip')||lower.endsWith('.7z')?filename:`${filename}.zip`
+  if(!['application/zip','application/x-7z-compressed'].includes(blob.type)&&!lower.endsWith('.zip')&&!lower.endsWith('.7z'))throw new ApiError(500,'지원하는 내보내기 파일이 아닙니다.')
+  const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=archiveName;anchor.style.display='none';document.body.appendChild(anchor);anchor.click();anchor.remove();window.setTimeout(()=>URL.revokeObjectURL(url),60_000)
 }

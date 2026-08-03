@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { FolderKanban, UserPlus, Users } from 'lucide-react'
+import { Database, FolderKanban, UserPlus, Users } from 'lucide-react'
 import { ApiError, request } from '../api/client'
 import type { Project, Role, Task, User } from '../types'
 import { Projects } from './Projects'
+import { ProjectData } from './ProjectData'
 
 const roleNames: Record<Role, string> = {
   ADMINISTRATOR: 'Sudo 관리자',
@@ -19,7 +20,7 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
   users: User[]
   onRefresh: () => void
 }) {
-  const [section, setSection] = useState<'projects' | 'users'>('projects')
+  const [section, setSection] = useState<'projects' | 'data' | 'users'>('projects')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -54,9 +55,11 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
     </header>
     <div className="admin-tabs">
       <button className={section === 'projects' ? 'active' : ''} onClick={() => setSection('projects')}><FolderKanban /> 프로젝트 관리</button>
+      <button className={section === 'data' ? 'active' : ''} onClick={() => setSection('data')}><Database /> 프로젝트 데이터</button>
       {actor.role === 'ADMINISTRATOR' && <button className={section === 'users' ? 'active' : ''} onClick={() => setSection('users')}><Users /> 사용자 관리</button>}
     </div>
     {section === 'projects' && <Projects actor={actor} projects={projects} tasks={tasks} users={users} onRefresh={onRefresh} />}
+    {section === 'data' && <ProjectData projects={projects} users={users} />}
     {section === 'users' && actor.role === 'ADMINISTRATOR' && <div className="admin-user-layout">
       <section className="panel">
         <div className="panel-heading"><div><span className="eyebrow">ACCOUNT CREATION</span><h2>사용자 생성</h2></div><UserPlus /></div>

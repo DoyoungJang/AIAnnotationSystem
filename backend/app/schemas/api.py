@@ -304,6 +304,36 @@ class ExportRequest(BaseModel):
     include_images: bool = True
 
 
+class ProjectDataItemOut(BaseModel):
+    asset_id: str
+    dataset_id: str
+    dataset_name: str
+    original_filename: str
+    relative_path: str
+    media_type: str
+    width: int
+    height: int
+    frame_count: int
+    phi_suspected: bool
+    created_at: datetime
+    task_id: str | None
+    task_status: TaskStatus | None
+    assigned_to: str | None
+    reviewer_id: str | None
+    annotation_count: int
+
+
+class SelectedDataExportRequest(BaseModel):
+    asset_ids: list[str] = Field(min_length=1)
+
+    @field_validator("asset_ids")
+    @classmethod
+    def unique_asset_ids(cls, asset_ids: list[str]) -> list[str]:
+        if len(asset_ids) != len(set(asset_ids)):
+            raise ValueError("asset_ids must be unique")
+        return asset_ids
+
+
 class ExportOut(ORMModel):
     id: str
     project_id: str

@@ -578,7 +578,7 @@ export function safeExportFolderName(value: string): string {
 }
 
 function exportFormatName(format: ExportJob['format']): string {
-  return { csv: 'CSV 분류', coco: 'COCO 박스/폴리곤', yolo: 'YOLO 박스', mask: 'PNG 분할 마스크' }[format]
+  return { csv: 'CSV 분류', coco: 'COCO 박스/폴리곤', yolo: 'YOLO 박스', mask: 'PNG 분할 마스크', 'selected-7z': '선택 데이터 7z' }[format]
 }
 
 function annotationTypeName(type: Label['annotation_type']): string {

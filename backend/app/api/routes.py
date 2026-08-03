@@ -18,6 +18,7 @@ from app.services.dataset_service import DatasetService
 from app.services.export_service import ExportService
 from app.services.label_preset_service import LabelPresetService, serialize_preset_node
 from app.services.project_service import ProjectService
+from app.services.project_data_service import ProjectDataService
 from app.services.review_service import ReviewService
 
 router = APIRouter(prefix="/api/v1")
@@ -213,6 +214,14 @@ def create_export(project_id: str, payload: ExportRequest, db: Session = Depends
 def project_exports(project_id: str, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).list_jobs(actor, project_id)
 
 
+@router.get("/projects/{project_id}/data-items", response_model=list[ProjectDataItemOut])
+def project_data_items(project_id: str, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ProjectDataService(db, settings).list_items(actor, project_id)
+
+
+@router.post("/projects/{project_id}/data-export", response_model=ExportOut, status_code=201)
+def create_selected_data_export(project_id: str, payload: SelectedDataExportRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ProjectDataService(db, settings).create_selected_7z(actor, project_id, payload.asset_ids)
+
+
 @router.get("/export-folders", response_model=list[str])
 def export_folders(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ExportService(db, settings).list_folders(actor)
 
@@ -227,8 +236,9 @@ def download_export(export_id: str, db: Session = Depends(get_db), settings: Set
     job = service.get(actor, export_id)
     content = service.download(actor, export_id)
     filename = Path(job.storage_key).name if job.storage_key else f"sonolabel-{export_id}.zip"
-    fallback = f"sonolabel-{export_id}.zip"
-    return Response(content, media_type="application/zip", headers={
+    is_7z = filename.lower().endswith(".7z")
+    fallback = f"sonolabel-{export_id}.{'7z' if is_7z else 'zip'}"
+    return Response(content, media_type="application/x-7z-compressed" if is_7z else "application/zip", headers={
         "Content-Disposition": f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}',
         "Content-Length": str(len(content)),
         "Cache-Control": "private, no-store",

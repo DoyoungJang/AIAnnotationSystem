@@ -20,6 +20,8 @@ $FrontendDir = Join-Path $RootDir "frontend"
 $VenvDir = Join-Path $RootDir ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 $VenvMarker = Join-Path $VenvDir ".sonolabel-ready"
+$BackendProjectFile = Join-Path $BackendDir "pyproject.toml"
+$DependencyFingerprint = (Get-FileHash -LiteralPath $BackendProjectFile -Algorithm SHA256).Hash
 
 function Assert-NativeSuccess {
     param([string]$Operation)
@@ -33,7 +35,12 @@ if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
     throw "Node.js/npm is required and was not found in PATH."
 }
 
-$PythonReady = (Test-Path -LiteralPath $VenvPython) -and (Test-Path -LiteralPath $VenvMarker)
+$InstalledFingerprint = ""
+if (Test-Path -LiteralPath $VenvMarker) {
+    $MarkerContent = Get-Content -LiteralPath $VenvMarker -Raw
+    if ($null -ne $MarkerContent) { $InstalledFingerprint = $MarkerContent.Trim() }
+}
+$PythonReady = (Test-Path -LiteralPath $VenvPython) -and ($InstalledFingerprint -eq $DependencyFingerprint)
 $InstallPython = $InstallMode -eq "Always" -or ($InstallMode -eq "Auto" -and -not $PythonReady)
 $InstallFrontend = $InstallMode -eq "Always" -or ($InstallMode -eq "Auto" -and -not (Test-Path -LiteralPath (Join-Path $FrontendDir "node_modules")))
 
@@ -45,7 +52,7 @@ if ($InstallPython) {
     Assert-NativeSuccess "Upgrading pip"
     & $VenvPython -m pip install -e $BackendDir
     Assert-NativeSuccess "Installing backend dependencies"
-    New-Item -ItemType File -Path $VenvMarker -Force | Out-Null
+    Set-Content -LiteralPath $VenvMarker -Value $DependencyFingerprint -NoNewline
 }
 if (-not (Test-Path -LiteralPath $VenvPython) -or -not (Test-Path -LiteralPath $VenvMarker)) {
     throw "Python environment is missing. Use -InstallMode Auto or Always."
