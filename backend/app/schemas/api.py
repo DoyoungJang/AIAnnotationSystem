@@ -54,11 +54,37 @@ class UserShortcutSettings(BaseModel):
         return self
 
 
-class UserCreate(BaseModel):
+class PasswordPair(BaseModel):
+    password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, value: str) -> str:
+        categories = sum((
+            any(character.isupper() for character in value),
+            any(character.islower() for character in value),
+            any(not character.isalnum() and not character.isspace() for character in value),
+        ))
+        if categories < 2:
+            raise ValueError("비밀번호는 대문자, 소문자, 특수문자 중 2종류 이상을 포함해야 합니다.")
+        return value
+
+    @model_validator(mode="after")
+    def passwords_must_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("비밀번호 확인이 일치하지 않습니다.")
+        return self
+
+
+class UserCreate(PasswordPair):
     username: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$", max_length=80)
     display_name: str = Field(min_length=1, max_length=120)
     role: Role
-    password: str = Field(min_length=12, max_length=256)
+
+
+class UserPasswordReset(PasswordPair):
+    pass
 
 
 class ProjectMemberCreate(BaseModel):

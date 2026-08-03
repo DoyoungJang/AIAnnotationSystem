@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Database, FolderKanban, UserPlus, Users } from 'lucide-react'
+import { Database, FolderKanban, KeyRound, UserPlus, Users, X } from 'lucide-react'
 import { ApiError, request } from '../api/client'
+import { PASSWORD_POLICY_MESSAGE, passwordPairError } from '../passwordPolicy'
 import type { Project, Role, Task, User } from '../types'
 import { Projects } from './Projects'
 import { ProjectData } from './ProjectData'
@@ -23,6 +24,10 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
   const [section, setSection] = useState<'projects' | 'data' | 'users'>('projects')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [resetUserId, setResetUserId] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
+  const [resetError, setResetError] = useState('')
+  const [resetting, setResetting] = useState(false)
 
   const createUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -30,6 +35,10 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
     setMessage('')
     const form = event.currentTarget
     const data = new FormData(form)
+    const password = String(data.get('password') ?? '')
+    const passwordConfirm = String(data.get('password_confirm') ?? '')
+    const passwordError = passwordPairError(password, passwordConfirm)
+    if (passwordError) { setError(passwordError); return }
     try {
       const created = await request<User>('/users', {
         method: 'POST',
@@ -37,7 +46,8 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
           username: data.get('username'),
           display_name: data.get('display_name'),
           role: data.get('role'),
-          password: data.get('password'),
+          password,
+          password_confirm: passwordConfirm,
         }),
       })
       form.reset()
@@ -46,6 +56,26 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
     } catch (cause) {
       setError(cause instanceof ApiError ? String(cause.detail) : '사용자를 생성하지 못했습니다.')
     }
+  }
+
+  const resetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = new FormData(form)
+    const password = String(data.get('password') ?? '')
+    const passwordConfirm = String(data.get('password_confirm') ?? '')
+    const passwordError = passwordPairError(password, passwordConfirm)
+    setResetMessage(''); setResetError('')
+    if (passwordError) { setResetError(passwordError); return }
+    const target = users.find(user => user.id === resetUserId)
+    if (!target) { setResetError('비밀번호를 변경할 사용자를 찾을 수 없습니다.'); return }
+    setResetting(true)
+    try {
+      await request<User>(`/users/${target.id}/password`, { method: 'PATCH', body: JSON.stringify({ password, password_confirm: passwordConfirm }) })
+      form.reset(); setResetUserId(''); setResetMessage(`${target.display_name} 사용자의 비밀번호를 변경했습니다.`); onRefresh()
+    } catch (cause) {
+      setResetError(cause instanceof ApiError ? String(cause.detail) : '비밀번호를 변경하지 못했습니다.')
+    } finally { setResetting(false) }
   }
 
   return <>
@@ -69,14 +99,16 @@ export function Admin({ actor, projects, tasks, users, onRefresh }: {
           <label>로그인 아이디<input name="username" pattern="[a-zA-Z0-9_.-]+" maxLength={80} required /></label>
           <label>표시 이름<input name="display_name" maxLength={120} required /></label>
           <label>역할<select name="role" defaultValue="ANNOTATOR">{Object.entries(roleNames).map(([role, label]) => <option key={role} value={role}>{label}</option>)}</select></label>
-          <label>초기 비밀번호<input name="password" type="password" minLength={12} autoComplete="new-password" required /></label>
-          <small className="muted">비밀번호는 12자 이상이어야 합니다. Sudo 관리자만 계정을 만들 수 있습니다.</small>
+          <label>초기 비밀번호<input name="password" type="password" minLength={8} autoComplete="new-password" required /></label>
+          <label>초기 비밀번호 확인<input name="password_confirm" type="password" minLength={8} autoComplete="new-password" required /></label>
+          <small className="muted">{PASSWORD_POLICY_MESSAGE} Sudo 관리자만 계정을 만들 수 있습니다.</small>
           <button className="primary"><UserPlus /> 계정 생성</button>
         </form>
       </section>
       <section className="panel">
         <div className="panel-heading"><div><span className="eyebrow">USERS</span><h2>등록된 사용자</h2></div><span>{users.length}명</span></div>
-        <div className="user-list">{users.map(user => <div key={user.id} className="user-row"><span className="avatar">{user.display_name.slice(0, 1)}</span><div><strong>{user.display_name}</strong><small>@{user.username}</small></div><span className={`role-badge role-${user.role.toLowerCase()}`}>{roleNames[user.role]}</span></div>)}</div>
+        {resetMessage && <div className="success-banner">{resetMessage}</div>}{resetError && <div className="error-banner">{resetError}</div>}
+        <div className="user-list">{users.map(user => <article key={user.id} className="user-account"><div className="user-row"><span className="avatar">{user.display_name.slice(0, 1)}</span><div><strong>{user.display_name}</strong><small>@{user.username}</small></div><span className={`role-badge role-${user.role.toLowerCase()}`}>{roleNames[user.role]}</span><button className="password-reset-toggle" onClick={() => { setResetUserId(current => current === user.id ? '' : user.id); setResetMessage(''); setResetError('') }}>{resetUserId === user.id ? <X /> : <KeyRound />}{resetUserId === user.id ? '취소' : '비밀번호 변경'}</button></div>{resetUserId === user.id && <form className="password-reset-form" onSubmit={resetPassword}><strong>{user.display_name} 새 비밀번호</strong><div><input name="password" type="password" minLength={8} placeholder="새 비밀번호" autoComplete="new-password" autoFocus required /><input name="password_confirm" type="password" minLength={8} placeholder="새 비밀번호 확인" autoComplete="new-password" required /><button className="primary" disabled={resetting}><KeyRound />{resetting ? '변경 중…' : '변경 저장'}</button></div><small>{PASSWORD_POLICY_MESSAGE}</small></form>}</article>)}</div>
       </section>
     </div>}
   </>

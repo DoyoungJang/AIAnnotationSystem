@@ -67,6 +67,11 @@ def users(db: Session = Depends(get_db), actor: User = Depends(require_roles(Rol
     return list(db.scalars(query).all())
 
 
+@router.patch("/users/{user_id}/password", response_model=UserOut)
+def reset_user_password(user_id: str, payload: UserPasswordReset, db: Session = Depends(get_db), actor: User = Depends(current_user)) -> User:
+    return ProjectService(db).reset_user_password(actor, user_id, payload)
+
+
 @router.get("/projects", response_model=list[ProjectOut])
 def projects(db: Session = Depends(get_db), actor: User = Depends(current_user)) -> list: return ProjectService(db).list_projects(actor)
 

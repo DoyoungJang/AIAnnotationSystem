@@ -51,9 +51,13 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert project.status_code == 201
     assert project.json()["show_task_thumbnails"] is False
     project_id = project.json()["id"]
-    manager = client.post("/api/v1/users", headers=headers, json={"username":"manager","display_name":"Project Manager","role":"PROJECT_MANAGER","password":"Manager-password-123"})
+    weak_password = client.post("/api/v1/users", headers=headers, json={"username":"weak","display_name":"Weak","role":"ANNOTATOR","password":"lowercase1","password_confirm":"lowercase1"})
+    assert weak_password.status_code == 422
+    mismatched_password = client.post("/api/v1/users", headers=headers, json={"username":"mismatch","display_name":"Mismatch","role":"ANNOTATOR","password":"Strong-pass!","password_confirm":"Different-pass!"})
+    assert mismatched_password.status_code == 422
+    manager = client.post("/api/v1/users", headers=headers, json={"username":"manager","display_name":"Project Manager","role":"PROJECT_MANAGER","password":"Manager-password-123","password_confirm":"Manager-password-123"})
     assert manager.status_code == 201
-    annotator = client.post("/api/v1/users", headers=headers, json={"username":"annotator","display_name":"Annotator","role":"ANNOTATOR","password":"Annotator-password-123"})
+    annotator = client.post("/api/v1/users", headers=headers, json={"username":"annotator","display_name":"Annotator","role":"ANNOTATOR","password":"Annotator-password-123","password_confirm":"Annotator-password-123"})
     assert annotator.status_code == 201
     member = client.post(f"/api/v1/projects/{project_id}/members", headers=headers, json={"user_id":manager.json()["id"]})
     assert member.status_code == 201 and member.json()["project_role"] == "PROJECT_MANAGER"
@@ -65,7 +69,7 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert added_by_manager.status_code == 201 and added_by_manager.json()["project_role"] == "ANNOTATOR"
     preview_setting = client.patch(f"/api/v1/projects/{project_id}/preview-settings", headers=manager_headers, json={"show_task_thumbnails":True})
     assert preview_setting.status_code == 200 and preview_setting.json()["show_task_thumbnails"] is True
-    forbidden_user = client.post("/api/v1/users", headers=manager_headers, json={"username":"blocked","display_name":"Blocked","role":"ANNOTATOR","password":"Blocked-password-123"})
+    forbidden_user = client.post("/api/v1/users", headers=manager_headers, json={"username":"blocked","display_name":"Blocked","role":"ANNOTATOR","password":"Blocked-password-123","password_confirm":"Blocked-password-123"})
     assert forbidden_user.status_code == 403
     assert client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":manager.json()["id"]}).status_code == 403
     private_project = client.post("/api/v1/projects", headers=headers, json={"name":"Private","description":"","task_types":["bbox"]})
@@ -91,6 +95,12 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert invalid_parent.status_code == 422
     annotator_login = client.post("/api/v1/auth/login", json={"username":"annotator","password":"Annotator-password-123"})
     annotator_headers = {"Authorization": f"Bearer {annotator_login.json()['access_token']}"}
+    manager_reset_forbidden = client.patch(f"/api/v1/users/{annotator.json()['id']}/password", headers=manager_headers, json={"password":"Manager-reset!","password_confirm":"Manager-reset!"})
+    assert manager_reset_forbidden.status_code == 403
+    reset_password = client.patch(f"/api/v1/users/{annotator.json()['id']}/password", headers=headers, json={"password":"New-annotator!","password_confirm":"New-annotator!"})
+    assert reset_password.status_code == 200
+    assert client.post("/api/v1/auth/login", json={"username":"annotator","password":"Annotator-password-123"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"username":"annotator","password":"New-annotator!"}).status_code == 200
     assert client.patch(f"/api/v1/projects/{project_id}/preview-settings", headers=annotator_headers, json={"show_task_thumbnails":False}).status_code == 403
     assert client.get("/api/v1/label-presets", headers=annotator_headers).status_code == 403
     admin_folder = client.post("/api/v1/label-presets/folders", headers=headers, json={"name":"Admin shared","parent_id":None})

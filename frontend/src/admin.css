@@ -37,13 +37,21 @@
 .admin-form label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 700; }
 .admin-form button { margin-top: 6px; }
 .user-list { display: flex; flex-direction: column; }
-.user-row { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid #162a35; }
+.user-account { border-bottom: 1px solid #162a35; }
+.user-row { display: grid; grid-template-columns: 38px 1fr auto auto; align-items: center; gap: 12px; padding: 12px 2px; }
 .user-row .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #19433f; color: #98f4e7; font-weight: 700; }
 .user-row div { display: flex; flex-direction: column; }
 .user-row small { color: var(--muted); margin-top: 3px; }
 .role-badge { font-size: 10px; padding: 6px 9px; border-radius: 14px; background: #172a35; color: #a9c0ca; }
 .role-administrator { background: #3b2027; color: #ffadba; }
 .role-project_manager { background: #322c17; color: #f7cd70; }
+.password-reset-toggle { padding: 7px 9px; white-space: nowrap; font-size: 10px; }
+.password-reset-form { margin: 0 0 12px 50px; padding: 12px; border: 1px solid #294955; border-radius: 8px; background: #091820; }
+.password-reset-form > strong { display: block; margin-bottom: 9px; font-size: 11px; }
+.password-reset-form > div { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.password-reset-form input { min-width: 0; padding: 9px; font-size: 11px; }
+.password-reset-form button { white-space: nowrap; }
+.password-reset-form > small { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; }
 .member-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .member-chips > span { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #0c1b25; padding: 7px 10px; border-radius: 18px; font-size: 12px; }
 .member-chips small { font: 500 8px 'DM Mono'; color: var(--teal); }

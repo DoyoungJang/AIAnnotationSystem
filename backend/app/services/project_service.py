@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate, UserPasswordReset
 from app.services.audit_service import AuditService
 
 
@@ -29,6 +29,21 @@ class ProjectService:
         self.db.flush()
         self.audit.record(actor, "USER_CREATED", "user", user.id, None, "User account created")
         self.db.commit()
+        return user
+
+    def reset_user_password(self, actor: User, user_id: str, payload: UserPasswordReset) -> User:
+        if actor.role != Role.ADMINISTRATOR:
+            raise HTTPException(403, "Sudo 관리자 권한이 필요합니다.")
+        user = self.db.get(User, user_id)
+        if user is None:
+            raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+        user.password_hash = hash_password(payload.password)
+        user.failed_login_count = 0
+        if user.status == "LOCKED":
+            user.status = "ACTIVE"
+        self.audit.record(actor, "USER_PASSWORD_RESET", "user", user.id, None, "User password reset by administrator")
+        self.db.commit()
+        self.db.refresh(user)
         return user
 
     def list_members(self, actor: User, project_id: str) -> list[dict]:
