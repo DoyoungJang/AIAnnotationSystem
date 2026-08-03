@@ -148,6 +148,8 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       shortcut: String(data.get('shortcut') ?? '').trim() || undefined,
     }
     setDraftLabels(current => [...current, label]); setSchemaMessage(`${label.label_name} 항목을 초안에 추가했습니다.`); form.reset()
+    const toolSelect = form.elements.namedItem('annotation_type')
+    if (toolSelect instanceof HTMLSelectElement) toolSelect.value = label.annotation_type
   }
   const publishSchema = async () => {
     if (!selected) return
