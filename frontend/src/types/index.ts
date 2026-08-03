@@ -3,7 +3,7 @@ export type TaskStatus='UNASSIGNED'|'ASSIGNED'|'IN_PROGRESS'|'DRAFT'|'SUBMITTED'
 export type Tool='pan'|'bbox'|'polygon'|'brush'|'eraser'
 export interface ShortcutSettings{previous_image:string;next_image:string;submit:string}
 export interface User{id:string;username:string;display_name:string;role:Role;status:string;shortcut_settings?:Partial<ShortcutSettings>}
-export interface Project{id:string;name:string;description:string;task_types:string[];show_task_thumbnails:boolean;status:string;created_at:string;updated_at:string;created_by:string}
+export interface Project{id:string;name:string;description:string;folder_path:string;task_types:string[];show_task_thumbnails:boolean;status:string;created_at:string;updated_at:string;created_by:string}
 export interface ProjectMember{id:string;project_id:string;user_id:string;project_role:Role;username:string;display_name:string}
 export interface Dataset{id:string;project_id:string;name:string;version:number;storage_type:string;manifest_hash:string|null;created_at:string}
 export interface Label{label_code:string;label_name:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';color:string;required:boolean;shortcut?:string}

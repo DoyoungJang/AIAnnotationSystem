@@ -103,7 +103,22 @@ class ProjectMemberOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=4000)
+    folder_path: str = Field(default="", max_length=500)
     task_types: list[Literal["classification", "bbox", "polygon", "brush"]] = Field(default_factory=list)
+
+    @field_validator("folder_path")
+    @classmethod
+    def validate_folder_path(cls, value: str) -> str:
+        return normalize_project_folder_path(value)
+
+
+class ProjectFolderUpdate(BaseModel):
+    folder_path: str = Field(default="", max_length=500)
+
+    @field_validator("folder_path")
+    @classmethod
+    def validate_folder_path(cls, value: str) -> str:
+        return normalize_project_folder_path(value)
 
 
 class ProjectPreviewSettings(BaseModel):
@@ -114,12 +129,25 @@ class ProjectOut(ORMModel):
     id: str
     name: str
     description: str
+    folder_path: str
     task_types: list[str]
     show_task_thumbnails: bool
     status: str
     created_by: str
     created_at: datetime
     updated_at: datetime
+
+
+def normalize_project_folder_path(value: str) -> str:
+    raw = value.strip().replace("\\", "/")
+    if not raw:
+        return ""
+    if raw.startswith("/") or (len(raw) >= 2 and raw[1] == ":"):
+        raise ValueError("프로젝트 폴더는 상대 경로로 입력해야 합니다.")
+    parts = [part.strip() for part in raw.split("/")]
+    if any(not part or part in {".", ".."} or any(ord(character) < 32 for character in part) for part in parts):
+        raise ValueError("프로젝트 폴더 경로가 올바르지 않습니다.")
+    return "/".join(parts)
 
 
 class LabelDefinition(BaseModel):

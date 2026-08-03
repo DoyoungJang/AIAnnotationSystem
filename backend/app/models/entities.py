@@ -58,6 +58,7 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    folder_path: Mapped[str] = mapped_column(String(500), default="")
     task_types: Mapped[list[str]] = mapped_column(JSON, default=list)
     show_task_thumbnails: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")

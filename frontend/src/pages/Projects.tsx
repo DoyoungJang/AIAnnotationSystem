@@ -6,6 +6,7 @@ import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, Projec
 export type AssetSelectionMode = 'all' | 'odd' | 'even' | 'none'
 export type ProjectSort = 'recent' | 'name'
 export interface AssetFolderNode { name: string; path: string; assets: Asset[]; children: AssetFolderNode[] }
+export interface ProjectFolderNode { name: string; path: string; projects: Project[]; children: ProjectFolderNode[] }
 
 const ROOT_ASSET_FOLDER_PATH = '__all_assets__'
 
@@ -104,8 +105,18 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [projectQuery, setProjectQuery] = useState('')
   const [projectSort, setProjectSort] = useState<ProjectSort>('recent')
   const [showCreateProject, setShowCreateProject] = useState(false)
-  const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))], [projects, created])
+  const [projectFolderOverrides, setProjectFolderOverrides] = useState<Record<string, string>>({})
+  const [expandedProjectFolders, setExpandedProjectFolders] = useState<string[]>([])
+  const [folderDraft, setFolderDraft] = useState('')
+  const [folderSaving, setFolderSaving] = useState(false)
+  const [folderMessage, setFolderMessage] = useState('')
+  const [folderError, setFolderError] = useState('')
+  const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))].map(project => ({ ...project, folder_path: projectFolderOverrides[project.id] ?? project.folder_path })), [projects, created, projectFolderOverrides])
   const filteredProjects = useMemo(() => filterAndSortProjects(visibleProjects, projectQuery, projectSort), [visibleProjects, projectQuery, projectSort])
+  const projectFolderTree = useMemo(() => buildProjectFolderTree(filteredProjects), [filteredProjects])
+  const projectFolderPaths = useMemo(() => collectProjectFolderPaths(projectFolderTree), [projectFolderTree])
+  const expandedProjectFolderSet = useMemo(() => new Set(projectQuery.trim() ? projectFolderPaths : expandedProjectFolders), [expandedProjectFolders, projectFolderPaths, projectQuery])
+  const existingProjectFolders = useMemo(() => [...new Set(visibleProjects.flatMap(project => parentProjectFolderPaths(project.folder_path)))].sort((left, right) => left.localeCompare(right, 'ko')), [visibleProjects])
   const taskCountByProject = useMemo(() => tasks.reduce<Record<string, number>>((counts, task) => {
     counts[task.project_id] = (counts[task.project_id] ?? 0) + 1
     return counts
@@ -117,6 +128,9 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   useEffect(() => {
     if (projectQuery.trim() && filteredProjects.length && !filteredProjects.some(project => project.id === selectedId)) setSelectedId(filteredProjects[0].id)
   }, [filteredProjects, projectQuery, selectedId])
+  useEffect(() => {
+    setExpandedProjectFolders(current => [...new Set([...current, ...projectFolderTree.children.map(folder => folder.path)])])
+  }, [projectFolderTree.children])
   useEffect(() => {
     let active = true
     setPresetLoading(true)
@@ -154,6 +168,9 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     }
     setPreviewMessage('')
     setPreviewError('')
+    setFolderDraft(selected.folder_path)
+    setFolderMessage('')
+    setFolderError('')
     setExportFolder(safeExportFolderName(selected.name))
     setExportMessage('')
     setExportError('')
@@ -173,7 +190,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     event.preventDefault(); clearNotices()
     const form = event.currentTarget; const data = new FormData(form)
     try {
-      const project = await request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), task_types: ['classification', 'bbox', 'polygon', 'brush'] }) })
+      const project = await request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), folder_path: data.get('folder_path'), task_types: ['classification', 'bbox', 'polygon', 'brush'] }) })
       setCreated(items => [project, ...items]); setSelectedId(project.id); setProjectQuery(''); setShowCreateProject(false); form.reset(); setMessage('프로젝트를 생성했습니다.'); onRefresh()
     } catch (cause) { setError(errorText(cause, '프로젝트를 생성하지 못했습니다.')) }
   }
@@ -188,6 +205,20 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     } catch (cause) { setPreviewError(errorText(cause, '미리보기 설정을 변경하지 못했습니다.')) }
     finally { setPreviewSaving(false) }
   }
+  const updateProjectFolder = async () => {
+    if (!selected || folderSaving || selected.folder_path === folderDraft.trim().replaceAll('\\', '/')) return
+    setFolderSaving(true); setFolderMessage(''); setFolderError('')
+    try {
+      const updated = await request<Project>(`/projects/${selected.id}/folder`, { method: 'PATCH', body: JSON.stringify({ folder_path: folderDraft }) })
+      setProjectFolderOverrides(current => ({ ...current, [updated.id]: updated.folder_path }))
+      setFolderDraft(updated.folder_path)
+      setFolderMessage(updated.folder_path ? `${updated.folder_path} 폴더로 이동했습니다.` : '프로젝트를 최상위로 이동했습니다.')
+      setExpandedProjectFolders(current => [...new Set([...current, ...parentProjectFolderPaths(updated.folder_path)])])
+      onRefresh()
+    } catch (cause) { setFolderError(errorText(cause, '프로젝트 폴더를 변경하지 못했습니다.')) }
+    finally { setFolderSaving(false) }
+  }
+  const toggleProjectFolder = (path: string) => setExpandedProjectFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
   const addLabel = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSchemaMessage(''); setSchemaError('')
     const form = event.currentTarget; const data = new FormData(form)
@@ -412,15 +443,22 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
           <select value={projectSort} onChange={event => setProjectSort(event.target.value as ProjectSort)} aria-label="프로젝트 정렬"><option value="recent">최근 수정순</option><option value="name">이름순</option></select>
         </div>
         <div className="project-list-scroll" aria-label="프로젝트 목록">
-          {filteredProjects.map(project => <button className={selected?.id === project.id ? 'project-item active' : 'project-item'} onClick={() => setSelectedId(project.id)} key={project.id}><span className="project-dot" /><div><strong title={project.name}>{project.name}</strong><small title={project.description}>{project.description || '설명 없음'}</small></div><span className="project-task-count" title="배정 작업 수">{taskCountByProject[project.id] ?? 0}</span></button>)}
+          <ProjectFolderTreeNode node={projectFolderTree} depth={0} expanded={expandedProjectFolderSet} selectedId={selected?.id} taskCounts={taskCountByProject} onToggle={toggleProjectFolder} onSelect={setSelectedId} root />
           {!filteredProjects.length && <div className="project-list-empty"><Search /><strong>검색 결과가 없습니다.</strong><small>다른 이름이나 설명으로 검색해 보세요.</small><button onClick={() => setProjectQuery('')}>전체 프로젝트 보기</button></div>}
         </div>
         <footer className="project-list-footer">
           <button className="project-create-toggle" onClick={() => setShowCreateProject(value => !value)} aria-expanded={showCreateProject}>{showCreateProject ? <X /> : <Plus />}{showCreateProject ? '취소' : '새 프로젝트'}</button>
-          {showCreateProject && <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" maxLength={160} autoFocus required /><input name="description" placeholder="설명 (선택)" maxLength={4000} /><button className="primary"><Plus /> 프로젝트 생성</button></form>}
+          {showCreateProject && <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" maxLength={160} autoFocus required /><input name="folder_path" placeholder="폴더 (예: 영상의학과/유방)" list="project-folder-options" maxLength={500} /><input name="description" placeholder="설명 (선택)" maxLength={4000} /><button className="primary"><Plus /> 프로젝트 생성</button></form>}
         </footer>
       </section>
       <div className="project-details">{selected ? <>
+        <section className="panel project-folder-manager">
+          <div className="panel-heading"><div><span className="eyebrow">PROJECT LOCATION</span><h2>프로젝트 폴더</h2></div><span>{selected.folder_path || '최상위'}</span></div>
+          <p className="muted">슬래시(/)로 여러 단계의 폴더를 지정합니다. 입력한 경로로 프로젝트를 이동하며, 비어 있는 폴더는 목록에서 자동으로 사라집니다.</p>
+          <div className="project-folder-fields"><label>폴더 경로<input value={folderDraft} onChange={event => setFolderDraft(event.target.value)} list="project-folder-options" placeholder="예: 영상의학과/유방" maxLength={500} /></label><button onClick={() => void updateProjectFolder()} disabled={folderSaving || selected.folder_path === folderDraft.trim().replaceAll('\\', '/')}><Folder />{folderSaving ? '이동 중…' : '폴더 이동'}</button><button onClick={() => setFolderDraft('')} disabled={!folderDraft}>최상위로</button></div>
+          <datalist id="project-folder-options">{existingProjectFolders.map(folder => <option value={folder} key={folder} />)}</datalist>
+          {folderMessage && <div className="success-banner">{folderMessage}</div>}{folderError && <div className="error-banner">{folderError}</div>}
+        </section>
         <section className="panel project-preview-policy">
           <div className="panel-heading"><div><span className="eyebrow">TASK PREVIEW POLICY</span><h2>라벨러 작업 목록 미리보기</h2></div><span>{selected.show_task_thumbnails ? '원본 썸네일 표시' : '보호 화면 표시'}</span></div>
           <p className="muted">프로젝트별로 작업 카드에 영상 썸네일을 노출할지 선택합니다. 원본 영상 파일 전체가 아니라 업로드 시 생성한 축소 썸네일만 인증된 프로젝트 멤버에게 전송됩니다.</p>
@@ -525,6 +563,21 @@ function AssetCard({ asset, selected, task, users, onToggle }: { asset: Asset; s
   const assignee = users.find(user => user.id === task?.assigned_to)
   const reviewer = users.find(user => user.id === task?.reviewer_id)
   return <article className={`asset-card selectable ${selected ? 'selected' : ''} ${task ? 'assigned' : ''}`}><label className="asset-selector"><input type="checkbox" checked={selected} onChange={() => onToggle(asset.id)} aria-label={`${asset.original_filename} 선택`} /><span>{task ? '배정 변경' : '선택'}</span></label><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong title={asset.original_filename}>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small>{task ? <div className="assignment-summary"><strong>{assignee?.display_name ?? '미지정'}</strong><small>{reviewer ? `검수 ${reviewer.display_name}` : '검수자 없음'} · {task.status}</small></div> : <small className="available-badge">배정 가능</small>}</article>
+}
+
+function ProjectFolderTreeNode({ node, depth, expanded, selectedId, taskCounts, onToggle, onSelect, root = false }: { node: ProjectFolderNode; depth: number; expanded: Set<string>; selectedId?: string; taskCounts: Record<string, number>; onToggle: (path: string) => void; onSelect: (projectId: string) => void; root?: boolean }) {
+  const open = root || expanded.has(node.path)
+  const total = collectProjectFolderProjects(node).length
+  const contents = <>{node.projects.map(project => <ProjectListItem project={project} selected={selectedId === project.id} taskCount={taskCounts[project.id] ?? 0} onSelect={onSelect} key={project.id} />)}{node.children.map(child => <ProjectFolderTreeNode node={child} depth={depth + 1} expanded={expanded} selectedId={selectedId} taskCounts={taskCounts} onToggle={onToggle} onSelect={onSelect} key={child.path} />)}</>
+  if (root) return <div className="project-folder-root">{contents}</div>
+  return <section className="project-folder-node">
+    <button className="project-folder-header" onClick={() => onToggle(node.path)} aria-expanded={open} style={{ paddingLeft: `${9 + depth * 11}px` }}>{open ? <ChevronDown /> : <ChevronRight />}<Folder /><span><strong title={node.path}>{node.name}</strong><small>{total}개 프로젝트</small></span></button>
+    {open && <div className="project-folder-contents">{contents}</div>}
+  </section>
+}
+
+function ProjectListItem({ project, selected, taskCount, onSelect }: { project: Project; selected: boolean; taskCount: number; onSelect: (projectId: string) => void }) {
+  return <button className={selected ? 'project-item active' : 'project-item'} onClick={() => onSelect(project.id)}><span className="project-dot" /><div><strong title={project.name}>{project.name}</strong><small title={project.description}>{project.description || '설명 없음'}</small></div><span className="project-task-count" title="배정 작업 수">{taskCount}</span></button>
 }
 
 function AssetFolderTreeNode({ node, depth, expanded, selectedAssetIds, taskByAsset, users, onToggleOpen, onToggleFolder, onToggleAsset }: { node: AssetFolderNode; depth: number; expanded: Set<string>; selectedAssetIds: string[]; taskByAsset: Map<string, Task>; users: User[]; onToggleOpen: (path: string) => void; onToggleFolder: (node: AssetFolderNode) => void; onToggleAsset: (assetId: string) => void }) {
@@ -688,10 +741,53 @@ export function safeExportFolderName(value: string): string {
 export function filterAndSortProjects(projects: Project[], query: string, sort: ProjectSort): Project[] {
   const normalizedQuery = query.trim().toLocaleLowerCase('ko-KR')
   return projects
-    .filter(project => !normalizedQuery || `${project.name} ${project.description}`.toLocaleLowerCase('ko-KR').includes(normalizedQuery))
+    .filter(project => !normalizedQuery || `${project.folder_path} ${project.name} ${project.description}`.toLocaleLowerCase('ko-KR').includes(normalizedQuery))
     .sort((left, right) => sort === 'name'
       ? left.name.localeCompare(right.name, 'ko', { numeric: true })
       : (Date.parse(right.updated_at) || 0) - (Date.parse(left.updated_at) || 0) || left.name.localeCompare(right.name, 'ko', { numeric: true }))
+}
+
+export function buildProjectFolderTree(projects: Project[]): ProjectFolderNode {
+  type MutableNode = ProjectFolderNode & { childMap: Map<string, MutableNode> }
+  const root: MutableNode = { name: '전체 프로젝트', path: '', projects: [], children: [], childMap: new Map() }
+  for (const project of projects) {
+    let current = root
+    for (const segment of project.folder_path.split('/').filter(Boolean)) {
+      const path = current.path ? `${current.path}/${segment}` : segment
+      let child = current.childMap.get(segment)
+      if (!child) {
+        child = { name: segment, path, projects: [], children: [], childMap: new Map() }
+        current.childMap.set(segment, child)
+        current.children.push(child)
+      }
+      current = child
+    }
+    current.projects.push(project)
+  }
+  const sortFolders = (node: MutableNode) => {
+    node.children.sort((left, right) => left.name.localeCompare(right.name, 'ko', { numeric: true }))
+    node.children.forEach(child => sortFolders(child as MutableNode))
+  }
+  sortFolders(root)
+  return root
+}
+
+export function collectProjectFolderProjects(node: ProjectFolderNode): Project[] {
+  return [...node.projects, ...node.children.flatMap(collectProjectFolderProjects)]
+}
+
+export function collectProjectFolderPaths(node: ProjectFolderNode): string[] {
+  return node.children.flatMap(child => [child.path, ...collectProjectFolderPaths(child)])
+}
+
+export function parentProjectFolderPaths(folderPath: string): string[] {
+  const paths: string[] = []
+  let current = ''
+  for (const segment of folderPath.split('/').filter(Boolean)) {
+    current = current ? `${current}/${segment}` : segment
+    paths.push(current)
+  }
+  return paths
 }
 
 function exportFormatName(format: ExportJob['format']): string {

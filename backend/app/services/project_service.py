@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate, UserPasswordReset
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectFolderUpdate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate, UserPasswordReset
 from app.services.audit_service import AuditService
 
 
@@ -133,6 +133,16 @@ class ProjectService:
             project.id,
             "Task thumbnails enabled" if payload.show_task_thumbnails else "Protected task placeholders enabled",
         )
+        self.db.commit()
+        self.db.refresh(project)
+        return project
+
+    def update_folder(self, actor: User, project_id: str, payload: ProjectFolderUpdate) -> Project:
+        project = self.get_project(actor, project_id)
+        if actor.role not in MANAGE_ROLES:
+            raise HTTPException(403, "프로젝트 폴더 관리 권한이 없습니다.")
+        project.folder_path = payload.folder_path
+        self.audit.record(actor, "PROJECT_FOLDER_UPDATED", "project", project.id, project.id, f"Project folder changed to {payload.folder_path or 'root'}")
         self.db.commit()
         self.db.refresh(project)
         return project

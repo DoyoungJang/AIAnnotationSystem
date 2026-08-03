@@ -47,10 +47,14 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
         json={"previous_image": "KeyA", "next_image": "KeyA", "submit": "Enter"},
     )
     assert duplicate_shortcuts.status_code == 422
-    project = client.post("/api/v1/projects", headers=headers, json={"name":"Fetal US","description":"Synthetic test","task_types":["bbox","polygon"]})
+    project = client.post("/api/v1/projects", headers=headers, json={"name":"Fetal US","description":"Synthetic test","folder_path":"산부인과/태아","task_types":["bbox","polygon"]})
     assert project.status_code == 201
+    assert project.json()["folder_path"] == "산부인과/태아"
     assert project.json()["show_task_thumbnails"] is False
     project_id = project.json()["id"]
+    moved_project = client.patch(f"/api/v1/projects/{project_id}/folder", headers=headers, json={"folder_path":"영상의학과/태아"})
+    assert moved_project.status_code == 200 and moved_project.json()["folder_path"] == "영상의학과/태아"
+    assert client.patch(f"/api/v1/projects/{project_id}/folder", headers=headers, json={"folder_path":"../outside"}).status_code == 422
     weak_password = client.post("/api/v1/users", headers=headers, json={"username":"weak","display_name":"Weak","role":"ANNOTATOR","password":"lowercase1","password_confirm":"lowercase1"})
     assert weak_password.status_code == 422
     mismatched_password = client.post("/api/v1/users", headers=headers, json={"username":"mismatch","display_name":"Mismatch","role":"ANNOTATOR","password":"Strong-pass!","password_confirm":"Different-pass!"})
