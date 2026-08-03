@@ -3,7 +3,7 @@ export type TaskStatus='UNASSIGNED'|'ASSIGNED'|'IN_PROGRESS'|'DRAFT'|'SUBMITTED'
 export type Tool='pan'|'bbox'|'polygon'|'brush'|'eraser'
 export interface ShortcutSettings{previous_image:string;next_image:string;submit:string}
 export interface User{id:string;username:string;display_name:string;role:Role;status:string;shortcut_settings?:Partial<ShortcutSettings>}
-export interface Project{id:string;name:string;description:string;task_types:string[];status:string;created_at:string;updated_at:string;created_by:string}
+export interface Project{id:string;name:string;description:string;task_types:string[];show_task_thumbnails:boolean;status:string;created_at:string;updated_at:string;created_by:string}
 export interface ProjectMember{id:string;project_id:string;user_id:string;project_role:Role;username:string;display_name:string}
 export interface Dataset{id:string;project_id:string;name:string;version:number;storage_type:string;manifest_hash:string|null;created_at:string}
 export interface Label{label_code:string;label_name:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';color:string;required:boolean;shortcut?:string}
@@ -12,7 +12,7 @@ export interface LabelPresetNode{id:string;parent_id:string|null;node_type:'FOLD
 export interface ExportJob{id:string;project_id:string;format:'csv'|'coco'|'yolo'|'mask'|'selected-7z';status:string;storage_key:string|null;error:string|null;created_by:string;created_at:string;completed_at:string|null}
 export interface Asset{id:string;dataset_id:string;series_id:string;media_type:string;original_filename:string;relative_path:string;width:number;height:number;frame_count:number;checksum:string;quality_status:string;phi_suspected:boolean}
 export interface ProjectDataItem{asset_id:string;dataset_id:string;dataset_name:string;original_filename:string;relative_path:string;media_type:string;width:number;height:number;frame_count:number;phi_suspected:boolean;created_at:string;task_id:string|null;task_status:TaskStatus|null;assigned_to:string|null;reviewer_id:string|null;annotation_count:number}
-export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number;project_name?:string;media_asset_original_filename?:string;media_asset_relative_path?:string}
+export interface Task{id:string;project_id:string;media_asset_id:string;assigned_to:string|null;reviewer_id:string|null;status:TaskStatus;lock_owner:string|null;lock_expires_at:string|null;aggregate_version:number;priority:number;project_name?:string;show_task_thumbnails?:boolean;media_asset_original_filename?:string;media_asset_relative_path?:string}
 export interface Point{x:number;y:number}
 export interface Annotation{id:string;task_id?:string;annotation_type:'classification'|'bbox'|'polygon'|'brush';label_id:string;geometry_json:Record<string,unknown>;attributes_json:Record<string,unknown>;frame_index:number;source:string;model_version:string|null;confidence:number|null;current_version:number}
 export interface AnnotationResponse{aggregate_version:number;annotations:Annotation[]}

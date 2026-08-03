@@ -157,3 +157,11 @@
 .project-data-labels > span:not(.eyebrow) { display: grid; grid-template-columns: 6px auto; gap: 2px 7px; align-items: center; padding: 6px 9px; border: 1px solid #213e49; border-radius: 7px; background: #0d202a; font-size: 10px; }
 .project-data-labels i { grid-row: 1 / 3; width: 5px; height: 27px; border-radius: 3px; }
 .project-data-labels small { color: var(--muted); font-size: 8px; }
+.project-preview-policy .panel-heading { margin-bottom: 8px; }
+.project-preview-policy .panel-heading > span { color: var(--teal); font-size: 11px; }
+.preview-policy-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.preview-policy-options button { justify-content: flex-start; padding: 16px; text-align: left; background: #09161e; }
+.preview-policy-options button.active { border-color: #2d746a; background: #14322f; box-shadow: inset 0 0 0 1px #35d4bd22; }
+.preview-policy-options button > svg { width: 24px; height: 24px; color: var(--teal); }
+.preview-policy-options button > span { display: flex; flex-direction: column; gap: 4px; }
+.preview-policy-options button small { color: var(--muted); }

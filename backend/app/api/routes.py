@@ -79,6 +79,11 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), actor:
 def project(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).get_project(actor, project_id)
 
 
+@router.patch("/projects/{project_id}/preview-settings", response_model=ProjectOut)
+def update_project_preview_settings(project_id: str, payload: ProjectPreviewSettings, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    return ProjectService(db).update_preview_settings(actor, project_id, payload)
+
+
 @router.get("/projects/{project_id}/members", response_model=list[ProjectMemberOut])
 def project_members(project_id: str, db: Session = Depends(get_db), actor: User = Depends(current_user)):
     return ProjectService(db).list_members(actor, project_id)

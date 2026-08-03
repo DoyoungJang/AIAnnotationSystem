@@ -48,7 +48,9 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     )
     assert duplicate_shortcuts.status_code == 422
     project = client.post("/api/v1/projects", headers=headers, json={"name":"Fetal US","description":"Synthetic test","task_types":["bbox","polygon"]})
-    assert project.status_code == 201; project_id = project.json()["id"]
+    assert project.status_code == 201
+    assert project.json()["show_task_thumbnails"] is False
+    project_id = project.json()["id"]
     manager = client.post("/api/v1/users", headers=headers, json={"username":"manager","display_name":"Project Manager","role":"PROJECT_MANAGER","password":"Manager-password-123"})
     assert manager.status_code == 201
     annotator = client.post("/api/v1/users", headers=headers, json={"username":"annotator","display_name":"Annotator","role":"ANNOTATOR","password":"Annotator-password-123"})
@@ -61,6 +63,8 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert all(user["role"] not in {"ADMINISTRATOR", "PROJECT_MANAGER"} for user in client.get("/api/v1/users", headers=manager_headers).json())
     added_by_manager = client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":annotator.json()["id"]})
     assert added_by_manager.status_code == 201 and added_by_manager.json()["project_role"] == "ANNOTATOR"
+    preview_setting = client.patch(f"/api/v1/projects/{project_id}/preview-settings", headers=manager_headers, json={"show_task_thumbnails":True})
+    assert preview_setting.status_code == 200 and preview_setting.json()["show_task_thumbnails"] is True
     forbidden_user = client.post("/api/v1/users", headers=manager_headers, json={"username":"blocked","display_name":"Blocked","role":"ANNOTATOR","password":"Blocked-password-123"})
     assert forbidden_user.status_code == 403
     assert client.post(f"/api/v1/projects/{project_id}/members", headers=manager_headers, json={"user_id":manager.json()["id"]}).status_code == 403
@@ -87,6 +91,7 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert invalid_parent.status_code == 422
     annotator_login = client.post("/api/v1/auth/login", json={"username":"annotator","password":"Annotator-password-123"})
     annotator_headers = {"Authorization": f"Bearer {annotator_login.json()['access_token']}"}
+    assert client.patch(f"/api/v1/projects/{project_id}/preview-settings", headers=annotator_headers, json={"show_task_thumbnails":False}).status_code == 403
     assert client.get("/api/v1/label-presets", headers=annotator_headers).status_code == 403
     admin_folder = client.post("/api/v1/label-presets/folders", headers=headers, json={"name":"Admin shared","parent_id":None})
     assert client.delete(f"/api/v1/label-presets/{admin_folder.json()['id']}", headers=manager_headers).status_code == 403
@@ -109,6 +114,7 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     assert all(task["status"] == "ASSIGNED" and task["priority"] == 60 for task in batch.json())
     annotator_tasks = client.get("/api/v1/tasks/my", headers=annotator_headers)
     assert annotator_tasks.status_code == 200 and len(annotator_tasks.json()) == 2
+    assert all(task["show_task_thumbnails"] is True for task in annotator_tasks.json())
     assert {task["project_name"] for task in annotator_tasks.json()} == {"Fetal US"}
     assert {task["media_asset_relative_path"] for task in annotator_tasks.json()} == {"Fetal US/trimester-1/sample-2.png", "Fetal US/trimester-2/sample-3.png"}
     assert {task["media_asset_original_filename"] for task in annotator_tasks.json()} == {"sample-2.png", "sample-3.png"}

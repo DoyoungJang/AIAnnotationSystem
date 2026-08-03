@@ -37,7 +37,7 @@ class AnnotationService:
 
     def my_tasks(self, actor: User) -> list[TaskListOut]:
         query = (
-            select(AnnotationTask, Project.name, MediaAsset.original_filename, MediaAsset.relative_path)
+            select(AnnotationTask, Project.name, Project.show_task_thumbnails, MediaAsset.original_filename, MediaAsset.relative_path)
             .join(Project, Project.id == AnnotationTask.project_id)
             .join(MediaAsset, MediaAsset.id == AnnotationTask.media_asset_id)
             .order_by(AnnotationTask.priority.desc(), AnnotationTask.updated_at.desc())
@@ -50,10 +50,11 @@ class AnnotationService:
             TaskListOut(
                 **TaskOut.model_validate(task).model_dump(),
                 project_name=project_name,
+                show_task_thumbnails=show_task_thumbnails,
                 media_asset_original_filename=original_filename,
                 media_asset_relative_path=relative_path or original_filename,
             )
-            for task, project_name, original_filename, relative_path in self.db.execute(query).all()
+            for task, project_name, show_task_thumbnails, original_filename, relative_path in self.db.execute(query).all()
         ]
 
     def acquire_lock(self, actor: User, task_id: str) -> AnnotationTask:

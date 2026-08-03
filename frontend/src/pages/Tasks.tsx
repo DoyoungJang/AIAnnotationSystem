@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, ChevronDown, ChevronRight, FileImage, Folder, LockKeyhole } from 'lucide-react'
+import { imageUrl } from '../api/client'
 import type { Task } from '../types'
 import { Status } from './Dashboard'
 
@@ -58,7 +59,30 @@ function TaskFolderTree({ node, depth, expanded, onToggle, onOpen }: { node: Tas
 
 function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
   const filename = task.media_asset_original_filename || task.media_asset_relative_path?.split('/').at(-1) || '보호된 의료영상'
-  return <button className="task-card" onClick={() => onOpen(task)}><div><span className="mono">TASK {task.id.slice(0, 8)}</span><Status status={task.status} /></div><div className="task-image"><LockKeyhole /><FileImage /><strong title={task.media_asset_relative_path}>{filename}</strong><span>보호된 의료영상</span></div><footer><span>Priority {task.priority} · Version {task.aggregate_version}</span><ArrowRight /></footer></button>
+  return <button className="task-card" onClick={() => onOpen(task)}><div><span className="mono">TASK {task.id.slice(0, 8)}</span><Status status={task.status} /></div><TaskPreview task={task} filename={filename} /><footer><span>Priority {task.priority} · Version {task.aggregate_version}</span><ArrowRight /></footer></button>
+}
+
+function TaskPreview({ task, filename }: { task: Task; filename: string }) {
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (!task.show_task_thumbnails) return
+    let active = true
+    let objectUrl = ''
+    setFailed(false)
+    void imageUrl(task.media_asset_id, true).then(url => {
+      objectUrl = url
+      if (active) setPreviewUrl(url)
+      else URL.revokeObjectURL(url)
+    }).catch(() => { if (active) setFailed(true) })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [task.media_asset_id, task.show_task_thumbnails])
+
+  if (task.show_task_thumbnails && previewUrl) return <div className="task-image task-image-original"><img src={previewUrl} alt={`${filename} 미리보기`} /><strong title={task.media_asset_relative_path}>{filename}</strong></div>
+  return <div className="task-image"><LockKeyhole /><FileImage /><strong title={task.media_asset_relative_path}>{filename}</strong><span>{task.show_task_thumbnails && !failed ? '미리보기 불러오는 중…' : '보호된 의료영상'}</span></div>
 }
 
 export function buildTaskProjectTrees(tasks: Task[]): TaskFolderNode[] {

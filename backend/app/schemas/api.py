@@ -80,11 +80,16 @@ class ProjectCreate(BaseModel):
     task_types: list[Literal["classification", "bbox", "polygon", "brush"]] = Field(default_factory=list)
 
 
+class ProjectPreviewSettings(BaseModel):
+    show_task_thumbnails: bool
+
+
 class ProjectOut(ORMModel):
     id: str
     name: str
     description: str
     task_types: list[str]
+    show_task_thumbnails: bool
     status: str
     created_by: str
     created_at: datetime
@@ -241,6 +246,7 @@ class TaskOut(ORMModel):
 
 class TaskListOut(TaskOut):
     project_name: str
+    show_task_thumbnails: bool
     media_asset_original_filename: str
     media_asset_relative_path: str
 

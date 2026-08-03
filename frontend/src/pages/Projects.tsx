@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Archive, ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Pencil, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, Eye, FileDown, FileImage, Folder, FolderPlus, Library, Pencil, Plus, RotateCcw, Save, ShieldAlert, ShieldCheck, Trash2, Upload, UserCog, X } from 'lucide-react'
 import { ApiError, downloadExport, request } from '../api/client'
 import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
@@ -96,8 +96,13 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [assigning, setAssigning] = useState(false)
   const [assignmentMessage, setAssignmentMessage] = useState('')
   const [assignmentError, setAssignmentError] = useState('')
+  const [previewOverrides, setPreviewOverrides] = useState<Record<string, boolean>>({})
+  const [previewSaving, setPreviewSaving] = useState(false)
+  const [previewMessage, setPreviewMessage] = useState('')
+  const [previewError, setPreviewError] = useState('')
   const visibleProjects = useMemo(() => [...projects, ...created.filter(item => !projects.some(project => project.id === item.id))], [projects, created])
-  const selected = visibleProjects.find(project => project.id === selectedId) ?? visibleProjects[0]
+  const selectedProject = visibleProjects.find(project => project.id === selectedId) ?? visibleProjects[0]
+  const selected = selectedProject ? { ...selectedProject, show_task_thumbnails: previewOverrides[selectedProject.id] ?? selectedProject.show_task_thumbnails } : undefined
 
   useEffect(() => { if (!selectedId && visibleProjects[0]) setSelectedId(visibleProjects[0].id) }, [selectedId, visibleProjects])
   useEffect(() => {
@@ -135,6 +140,8 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       labelForm.reset()
       if (tool instanceof HTMLSelectElement) tool.value = selectedTool
     }
+    setPreviewMessage('')
+    setPreviewError('')
     setExportFolder(safeExportFolderName(selected.name))
     setExportMessage('')
     setExportError('')
@@ -157,6 +164,17 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       const project = await request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), task_types: ['classification', 'bbox', 'polygon', 'brush'] }) })
       setCreated(items => [project, ...items]); setSelectedId(project.id); form.reset(); setMessage('프로젝트를 생성했습니다.'); onRefresh()
     } catch (cause) { setError(errorText(cause, '프로젝트를 생성하지 못했습니다.')) }
+  }
+  const updatePreviewSetting = async (showTaskThumbnails: boolean) => {
+    if (!selected || previewSaving || selected.show_task_thumbnails === showTaskThumbnails) return
+    setPreviewSaving(true); setPreviewMessage(''); setPreviewError('')
+    try {
+      const updated = await request<Project>(`/projects/${selected.id}/preview-settings`, { method: 'PATCH', body: JSON.stringify({ show_task_thumbnails: showTaskThumbnails }) })
+      setPreviewOverrides(current => ({ ...current, [updated.id]: updated.show_task_thumbnails }))
+      setPreviewMessage(updated.show_task_thumbnails ? '라벨러 작업 목록에 원본 영상 썸네일을 표시합니다.' : '라벨러 작업 목록에서 영상을 보호 화면으로 가립니다.')
+      onRefresh()
+    } catch (cause) { setPreviewError(errorText(cause, '미리보기 설정을 변경하지 못했습니다.')) }
+    finally { setPreviewSaving(false) }
   }
   const addLabel = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setSchemaMessage(''); setSchemaError('')
@@ -380,6 +398,15 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
         <form className="inline-form" onSubmit={createProject}><input name="name" placeholder="새 프로젝트 이름" required /><input name="description" placeholder="설명" /><button className="primary"><Plus /> 생성</button></form>
       </section>
       <div className="project-details">{selected ? <>
+        <section className="panel project-preview-policy">
+          <div className="panel-heading"><div><span className="eyebrow">TASK PREVIEW POLICY</span><h2>라벨러 작업 목록 미리보기</h2></div><span>{selected.show_task_thumbnails ? '원본 썸네일 표시' : '보호 화면 표시'}</span></div>
+          <p className="muted">프로젝트별로 작업 카드에 영상 썸네일을 노출할지 선택합니다. 원본 영상 파일 전체가 아니라 업로드 시 생성한 축소 썸네일만 인증된 프로젝트 멤버에게 전송됩니다.</p>
+          <div className="preview-policy-options">
+            <button className={!selected.show_task_thumbnails ? 'active' : ''} onClick={() => void updatePreviewSetting(false)} disabled={previewSaving}><ShieldCheck /><span><strong>보호된 의료영상</strong><small>영상 대신 보호 화면과 파일명 표시</small></span></button>
+            <button className={selected.show_task_thumbnails ? 'active' : ''} onClick={() => void updatePreviewSetting(true)} disabled={previewSaving}><Eye /><span><strong>원본 영상 미리보기</strong><small>작업 카드에 축소 썸네일 표시</small></span></button>
+          </div>
+          {previewMessage && <div className="success-banner">{previewMessage}</div>}{previewError && <div className="error-banner">{previewError}</div>}
+        </section>
         <section className="panel schema-editor">
           <div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>라벨링 항목 관리</h2></div><span>{schemas[0] ? `게시 버전 v${schemas[0].version}` : '게시 전'} · 초안 {draftLabels.length}개</span></div>
           <p className="muted">초안 항목은 수정하거나 화살표로 순서를 바꾼 뒤 새 버전으로 게시할 수 있습니다. 기존 버전과 완료된 Annotation은 변경되지 않습니다.</p>

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, ProjectPreviewSettings, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate
 from app.services.audit_service import AuditService
 
 
@@ -103,6 +103,23 @@ class ProjectService:
         self.db.add(ProjectMember(project_id=project.id, user_id=actor.id, project_role=actor.role))
         self.audit.record(actor, "PROJECT_CREATED", "project", project.id, project.id, "Project created")
         self.db.commit()
+        return project
+
+    def update_preview_settings(self, actor: User, project_id: str, payload: ProjectPreviewSettings) -> Project:
+        project = self.get_project(actor, project_id)
+        if actor.role not in MANAGE_ROLES:
+            raise HTTPException(403, "프로젝트 미리보기 설정 권한이 없습니다.")
+        project.show_task_thumbnails = payload.show_task_thumbnails
+        self.audit.record(
+            actor,
+            "PROJECT_PREVIEW_SETTINGS_UPDATED",
+            "project",
+            project.id,
+            project.id,
+            "Task thumbnails enabled" if payload.show_task_thumbnails else "Protected task placeholders enabled",
+        )
+        self.db.commit()
+        self.db.refresh(project)
         return project
 
     def create_schema(self, actor: User, project_id: str, payload: LabelSchemaCreate) -> LabelSchemaVersion:
