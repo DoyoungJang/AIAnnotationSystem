@@ -51,13 +51,21 @@
 .label-add-form input[type="color"] { width: 100%; height: 39px; padding: 4px; }
 .label-add-form .required-label { flex-direction: row; align-items: center; min-height: 39px; white-space: nowrap; }
 .label-add-form .required-label input { width: 16px; height: 16px; padding: 0; accent-color: var(--teal); }
+.label-add-form.editing { border-color: #4ba99d; box-shadow: 0 0 0 2px #35d4bd12; }
+.label-form-actions { display: flex; gap: 6px; }
+.label-form-actions button { min-height: 39px; padding: 8px 10px; white-space: nowrap; }
+.label-form-actions button:first-child { border-color: #2e746b; color: #95eee1; }
 .schema-notice { margin: 12px 0 0; }
 .schema-label-list { display: flex; flex-direction: column; margin-top: 14px; border-top: 1px solid var(--line); }
-.schema-label-list article { display: grid; grid-template-columns: 9px 1fr 28px 36px; gap: 11px; align-items: center; min-height: 58px; padding: 8px 4px; border-bottom: 1px solid #162a35; }
+.schema-label-list article { display: grid; grid-template-columns: 9px 1fr 28px 144px; gap: 11px; align-items: center; min-height: 58px; padding: 8px 4px; border-bottom: 1px solid #162a35; }
+.schema-label-list article.editing { margin: 0 -8px; padding-right: 12px; padding-left: 12px; background: #102a2a; box-shadow: inset 2px 0 var(--teal); }
 .schema-label-list .label-color { width: 7px; height: 34px; border-radius: 4px; }
 .schema-label-list article > div { display: flex; flex-direction: column; gap: 4px; }
 .schema-label-list small { color: var(--muted); }
 .schema-label-list button { padding: 6px; border: 0; background: transparent; color: #ef8b98; }
+.schema-label-actions { display: flex; justify-content: flex-end; gap: 2px; }
+.schema-label-actions button { color: #77cfc3; }
+.schema-label-actions button:last-child { color: #ef8b98; }
 .schema-order { color: #5f7885; font: 500 10px 'DM Mono'; text-align: center; }
 .batch-assignment { margin-bottom: 18px; padding: 16px; border: 1px solid #244754; border-radius: 10px; background: #08151d; }
 .selection-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }

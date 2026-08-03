@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Archive, CheckSquare, ChevronDown, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Archive, ArrowDown, ArrowUp, CheckSquare, ChevronDown, ChevronRight, Download, FileDown, FileImage, Folder, FolderPlus, Library, Pencil, Plus, RotateCcw, Save, ShieldAlert, Trash2, Upload, UserCog, X } from 'lucide-react'
 import { ApiError, downloadExport, request } from '../api/client'
 import type { Asset, Dataset, ExportJob, Label, LabelPresetNode, Project, ProjectMember, Schema, Task, User } from '../types'
 
@@ -34,6 +34,21 @@ export function buildUploadBatches<T extends { size: number }>(files: T[], maxFi
   return batches
 }
 
+export function moveDraftLabel(labels: Label[], labelCode: string, offset: -1 | 1): Label[] {
+  const index = labels.findIndex(label => label.label_code === labelCode)
+  const target = index + offset
+  if (index < 0 || target < 0 || target >= labels.length) return labels
+  const next = [...labels]
+  const current = next[index]
+  next[index] = next[target]
+  next[target] = current
+  return next
+}
+
+export function replaceDraftLabel(labels: Label[], originalCode: string, replacement: Label): Label[] {
+  return labels.map(label => label.label_code === originalCode ? replacement : label)
+}
+
 const DEFAULT_LABELS: Label[] = [
   { label_code: 'FETAL_HEAD', label_name: '태아 머리', annotation_type: 'polygon', color: '#36d6c2', required: true, shortcut: '1' },
   { label_code: 'STANDARD_PLANE', label_name: '표준 단면', annotation_type: 'classification', color: '#6ea8fe', required: false, shortcut: '2' },
@@ -48,6 +63,8 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [schemas, setSchemas] = useState<Schema[]>([])
   const [draftLabels, setDraftLabels] = useState<Label[]>([])
+  const [editingLabelCode, setEditingLabelCode] = useState<string | null>(null)
+  const labelFormRef = useRef<HTMLFormElement>(null)
   const [schemaMessage, setSchemaMessage] = useState('')
   const [schemaError, setSchemaError] = useState('')
   const [publishingSchema, setPublishingSchema] = useState(false)
@@ -110,6 +127,14 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     setDraftLabels([])
     setSchemaMessage('')
     setSchemaError('')
+    setEditingLabelCode(null)
+    const labelForm = labelFormRef.current
+    if (labelForm) {
+      const tool = labelForm.elements.namedItem('annotation_type')
+      const selectedTool = tool instanceof HTMLSelectElement ? tool.value : 'bbox'
+      labelForm.reset()
+      if (tool instanceof HTMLSelectElement) tool.value = selectedTool
+    }
     setExportFolder(safeExportFolderName(selected.name))
     setExportMessage('')
     setExportError('')
@@ -138,7 +163,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     const form = event.currentTarget; const data = new FormData(form)
     const labelCode = normalizeLabelCode(String(data.get('label_code') ?? ''))
     if (!labelCode) { setSchemaError('라벨 코드는 영문, 숫자, 밑줄 또는 하이픈으로 입력하세요.'); return }
-    if (draftLabels.some(label => label.label_code === labelCode)) { setSchemaError(`이미 ${labelCode} 코드가 있습니다.`); return }
+    if (draftLabels.some(label => label.label_code === labelCode && label.label_code !== editingLabelCode)) { setSchemaError(`이미 ${labelCode} 코드가 있습니다.`); return }
     const label: Label = {
       label_code: labelCode,
       label_name: String(data.get('label_name') ?? '').trim(),
@@ -147,9 +172,39 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       required: data.get('required') === 'on',
       shortcut: String(data.get('shortcut') ?? '').trim() || undefined,
     }
-    setDraftLabels(current => [...current, label]); setSchemaMessage(`${label.label_name} 항목을 초안에 추가했습니다.`); form.reset()
+    setDraftLabels(current => editingLabelCode ? replaceDraftLabel(current, editingLabelCode, label) : [...current, label])
+    setSchemaMessage(editingLabelCode ? `${label.label_name} 항목의 변경사항을 저장했습니다.` : `${label.label_name} 항목을 초안에 추가했습니다.`)
+    form.reset()
     const toolSelect = form.elements.namedItem('annotation_type')
     if (toolSelect instanceof HTMLSelectElement) toolSelect.value = label.annotation_type
+    setEditingLabelCode(null)
+  }
+  const editLabel = (label: Label) => {
+    const form = labelFormRef.current
+    if (!form) return
+    setEditingLabelCode(label.label_code); setSchemaMessage(''); setSchemaError('')
+    const setValue = (name: string, value: string) => {
+      const field = form.elements.namedItem(name)
+      if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) field.value = value
+    }
+    setValue('label_name', label.label_name)
+    setValue('label_code', label.label_code)
+    setValue('annotation_type', label.annotation_type)
+    setValue('color', label.color)
+    setValue('shortcut', label.shortcut ?? '')
+    const required = form.elements.namedItem('required')
+    if (required instanceof HTMLInputElement) required.checked = label.required
+    form.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  const cancelLabelEdit = () => {
+    const form = labelFormRef.current
+    if (form) {
+      const tool = form.elements.namedItem('annotation_type')
+      const selectedTool = tool instanceof HTMLSelectElement ? tool.value : 'bbox'
+      form.reset()
+      if (tool instanceof HTMLSelectElement) tool.value = selectedTool
+    }
+    setEditingLabelCode(null); setSchemaMessage(''); setSchemaError('')
   }
   const publishSchema = async () => {
     if (!selected) return
@@ -180,6 +235,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     } catch (cause) { setPresetError(errorText(cause, '프리셋으로 저장하지 못했습니다.')) }
   }
   const loadLabelPreset = (preset: LabelPresetNode) => {
+    cancelLabelEdit()
     setDraftLabels(preset.labels.map(label => ({ ...label })))
     setPresetMessage(`${preset.name} 프리셋의 ${preset.labels.length}개 항목을 프로젝트 초안에 불러왔습니다.`)
     setPresetError(''); setSchemaMessage(''); setSchemaError('')
@@ -326,8 +382,8 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
       <div className="project-details">{selected ? <>
         <section className="panel schema-editor">
           <div className="panel-heading"><div><span className="eyebrow">LABEL SCHEMA</span><h2>라벨링 항목 관리</h2></div><span>{schemas[0] ? `게시 버전 v${schemas[0].version}` : '게시 전'} · 초안 {draftLabels.length}개</span></div>
-          <p className="muted">프로젝트 관리자가 항목을 추가하거나 삭제한 뒤 새 버전으로 게시합니다. 기존 버전과 완료된 Annotation은 변경되지 않습니다.</p>
-          <div className="schema-actions"><button onClick={() => { setDraftLabels(DEFAULT_LABELS.map(label => ({ ...label }))); setSchemaMessage('기본 항목을 초안에 불러왔습니다.'); setSchemaError('') }}>기본 항목 불러오기</button><button onClick={() => { setDraftLabels(schemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []); setSchemaMessage('최근 게시 버전으로 되돌렸습니다.'); setSchemaError('') }}><RotateCcw /> 게시 버전으로 되돌리기</button><button className="primary" onClick={publishSchema} disabled={publishingSchema}><Save /> {publishingSchema ? '게시 중...' : '새 버전 게시'}</button></div>
+          <p className="muted">초안 항목은 수정하거나 화살표로 순서를 바꾼 뒤 새 버전으로 게시할 수 있습니다. 기존 버전과 완료된 Annotation은 변경되지 않습니다.</p>
+          <div className="schema-actions"><button onClick={() => { cancelLabelEdit(); setDraftLabels(DEFAULT_LABELS.map(label => ({ ...label }))); setSchemaMessage('기본 항목을 초안에 불러왔습니다.'); setSchemaError('') }}>기본 항목 불러오기</button><button onClick={() => { cancelLabelEdit(); setDraftLabels(schemas[0]?.schema_json.labels.map(label => ({ ...label })) ?? []); setSchemaMessage('최근 게시 버전으로 되돌렸습니다.'); setSchemaError('') }}><RotateCcw /> 게시 버전으로 되돌리기</button><button className="primary" onClick={publishSchema} disabled={publishingSchema || Boolean(editingLabelCode)} title={editingLabelCode ? '항목 변경을 먼저 저장하거나 취소하세요.' : undefined}><Save /> {publishingSchema ? '게시 중...' : '새 버전 게시'}</button></div>
           <section className="preset-library" aria-label="라벨 프리셋 라이브러리">
             <div className="preset-heading"><div><Library /><strong>분과별 라벨 프리셋</strong><small>현재 프로젝트 초안을 저장하거나 기존 프리셋을 불러옵니다.</small></div><span>{presetNodes.filter(node => node.node_type === 'PRESET').length}개 프리셋</span></div>
             <nav className="preset-breadcrumb" aria-label="프리셋 폴더 경로">
@@ -346,18 +402,18 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
               {!presetChildren.folders.length && !presetChildren.presets.length && <div className="preset-empty">이 폴더는 비어 있습니다. 폴더를 만들거나 현재 초안을 프리셋으로 저장하세요.</div>}
             </div>}
           </section>
-          <form className="label-add-form" onSubmit={addLabel}>
+          <form className={`label-add-form ${editingLabelCode ? 'editing' : ''}`} onSubmit={addLabel} ref={labelFormRef}>
             <label>항목 이름<input name="label_name" placeholder="예: 병변 경계" maxLength={120} required /></label>
             <label>라벨 코드<input name="label_code" placeholder="예: LESION_BORDER" pattern="[A-Za-z0-9_-]+" maxLength={80} required /></label>
             <label>라벨링 도구<select name="annotation_type" defaultValue="bbox"><option value="classification">분류</option><option value="bbox">박스</option><option value="polygon">폴리곤</option><option value="brush">브러시</option></select></label>
             <label>색상<input name="color" type="color" defaultValue="#35d4bd" /></label>
             <label>단축키<input name="shortcut" placeholder="예: 5" maxLength={10} /></label>
             <label className="required-label"><input name="required" type="checkbox" /> 필수 항목</label>
-            <button type="submit"><Plus /> 항목 추가</button>
+            <div className="label-form-actions"><button type="submit">{editingLabelCode ? <Save /> : <Plus />} {editingLabelCode ? '변경 저장' : '항목 추가'}</button>{editingLabelCode && <button type="button" onClick={cancelLabelEdit}><X /> 취소</button>}</div>
           </form>
           {schemaMessage && <div className="success-banner schema-notice" role="status">{schemaMessage}</div>}
           {schemaError && <div className="error-banner schema-notice" role="alert">{schemaError}</div>}
-          <div className="schema-label-list">{draftLabels.map((label, index) => <article key={label.label_code}><span className="label-color" style={{ background: label.color }} /><div><strong>{label.label_name}</strong><small>{label.label_code} · {annotationTypeName(label.annotation_type)}{label.required ? ' · 필수' : ''}{label.shortcut ? ` · 단축키 ${label.shortcut}` : ''}</small></div><span className="schema-order">{index + 1}</span><button title={`${label.label_name} 삭제`} aria-label={`${label.label_name} 삭제`} onClick={() => { setDraftLabels(current => current.filter(item => item.label_code !== label.label_code)); setSchemaMessage(''); setSchemaError('') }}><Trash2 /></button></article>)}{!draftLabels.length && <div className="empty">아직 라벨 항목이 없습니다. 위 폼에서 첫 항목을 추가하세요.</div>}</div>
+          <div className="schema-label-list">{draftLabels.map((label, index) => <article className={editingLabelCode === label.label_code ? 'editing' : ''} key={label.label_code}><span className="label-color" style={{ background: label.color }} /><div><strong>{label.label_name}</strong><small>{label.label_code} · {annotationTypeName(label.annotation_type)}{label.required ? ' · 필수' : ''}{label.shortcut ? ` · 단축키 ${label.shortcut}` : ''}</small></div><span className="schema-order">{index + 1}</span><span className="schema-label-actions"><button type="button" title={`${label.label_name} 위로 이동`} aria-label={`${label.label_name} 위로 이동`} disabled={index === 0} onClick={() => setDraftLabels(current => moveDraftLabel(current, label.label_code, -1))}><ArrowUp /></button><button type="button" title={`${label.label_name} 아래로 이동`} aria-label={`${label.label_name} 아래로 이동`} disabled={index === draftLabels.length - 1} onClick={() => setDraftLabels(current => moveDraftLabel(current, label.label_code, 1))}><ArrowDown /></button><button type="button" title={`${label.label_name} 수정`} aria-label={`${label.label_name} 수정`} onClick={() => editLabel(label)}><Pencil /></button><button type="button" title={`${label.label_name} 삭제`} aria-label={`${label.label_name} 삭제`} onClick={() => { if (editingLabelCode === label.label_code) cancelLabelEdit(); setDraftLabels(current => current.filter(item => item.label_code !== label.label_code)); setSchemaMessage(''); setSchemaError('') }}><Trash2 /></button></span></article>)}{!draftLabels.length && <div className="empty">아직 라벨 항목이 없습니다. 위 폼에서 첫 항목을 추가하세요.</div>}</div>
         </section>
         <section className="panel"><div className="panel-heading"><div><span className="eyebrow">PROJECT ACCESS</span><h2>프로젝트 멤버</h2></div><span>{members.length}명</span></div>
           <div className="member-chips">{members.map(member => <span key={member.id}>{member.display_name}<small>{member.project_role}</small></span>)}</div>

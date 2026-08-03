@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Asset, LabelPresetNode } from '../types'
-import { buildAssetFolderTree, buildAssignmentBatches, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
+import type { Asset, Label, LabelPresetNode } from '../types'
+import { buildAssetFolderTree, buildAssignmentBatches, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, moveDraftLabel, normalizeLabelCode, presetDescendantIds, presetFolderTrail, replaceDraftLabel, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -27,6 +27,27 @@ describe('asset batch selection', () => {
 
   it('deduplicates and splits large assignments to the API limit', () => {
     expect(buildAssignmentBatches(['one', 'two', 'one', 'three', 'four'], 2)).toEqual([['one', 'two'], ['three', 'four']])
+  })
+})
+
+describe('label draft editing', () => {
+  const labels: Label[] = [
+    { label_code: 'ONE', label_name: '첫 번째', annotation_type: 'bbox', color: '#111111', required: false },
+    { label_code: 'TWO', label_name: '두 번째', annotation_type: 'polygon', color: '#222222', required: true },
+    { label_code: 'THREE', label_name: '세 번째', annotation_type: 'brush', color: '#333333', required: false },
+  ]
+
+  it('moves an item without changing the remaining draft content', () => {
+    expect(moveDraftLabel(labels, 'TWO', -1).map(label => label.label_code)).toEqual(['TWO', 'ONE', 'THREE'])
+    expect(moveDraftLabel(labels, 'ONE', -1)).toBe(labels)
+    expect(moveDraftLabel(labels, 'THREE', 1)).toBe(labels)
+  })
+
+  it('replaces edited content in the same position', () => {
+    const replacement: Label = { ...labels[1], label_code: 'SECOND', label_name: '변경한 두 번째', annotation_type: 'classification' }
+    const result = replaceDraftLabel(labels, 'TWO', replacement)
+    expect(result.map(label => label.label_code)).toEqual(['ONE', 'SECOND', 'THREE'])
+    expect(result[1]).toEqual(replacement)
   })
 })
 
