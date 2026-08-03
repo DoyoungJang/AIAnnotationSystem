@@ -12,6 +12,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'bmp', 'tif', 
 const UPLOAD_BATCH_FILE_LIMIT = 200
 const UPLOAD_BATCH_BYTE_LIMIT = 64 * 1024 * 1024
 const ASSIGNMENT_BATCH_LIMIT = 1000
+const KEEP_REVIEWER = '__KEEP_REVIEWER__'
 
 interface ImportResult { dataset_id: string; assets: Asset[]; duplicate_count: number }
 
@@ -74,7 +75,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
   const [expandedAssetFolders, setExpandedAssetFolders] = useState<string[]>([ROOT_ASSET_FOLDER_PATH])
   const [assigneeId, setAssigneeId] = useState('')
-  const [reviewerId, setReviewerId] = useState('')
+  const [reviewerId, setReviewerId] = useState(KEEP_REVIEWER)
   const [assigning, setAssigning] = useState(false)
   const [assignmentMessage, setAssignmentMessage] = useState('')
   const [assignmentError, setAssignmentError] = useState('')
@@ -268,32 +269,43 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
   const selectableAssets = useMemo(() => assets.filter(asset => !taskByAsset.has(asset.id)), [assets, taskByAsset])
   const assetFolderTree = useMemo(() => buildAssetFolderTree(assets), [assets])
   const expandedAssetFolderSet = useMemo(() => new Set(expandedAssetFolders), [expandedAssetFolders])
-  const chooseAssets = (mode: AssetSelectionMode) => setSelectedAssetIds(selectAssetIds(selectableAssets, mode))
+  const chooseAssets = (mode: AssetSelectionMode) => setSelectedAssetIds(selectAssetIds(assets, mode))
   const toggleAsset = (assetId: string) => setSelectedAssetIds(current => current.includes(assetId) ? current.filter(id => id !== assetId) : [...current, assetId])
   const toggleAssetFolder = (node: AssetFolderNode) => {
-    setSelectedAssetIds(current => toggleFolderAssetSelection(current, node, new Set(taskByAsset.keys())))
+    setSelectedAssetIds(current => toggleFolderAssetSelection(current, node, new Set()))
   }
   const toggleAssetFolderOpen = (path: string) => setExpandedAssetFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
   const assignSelected = async () => {
     setAssignmentMessage(''); setAssignmentError('')
     if (!selected) { setAssignmentError('프로젝트를 먼저 선택하세요.'); return }
     if (!selectedAssetIds.length) { setAssignmentError('배정할 이미지를 한 개 이상 선택하세요.'); return }
-    if (!assigneeId) { setAssignmentError('라벨러를 선택하세요.'); return }
-    const selectableAssetIds = new Set(selectableAssets.map(asset => asset.id))
-    const assignmentBatches = buildAssignmentBatches(selectedAssetIds.filter(assetId => selectableAssetIds.has(assetId)))
-    if (!assignmentBatches.length) { setAssignmentError('현재 프로젝트에서 배정 가능한 이미지를 다시 선택하세요.'); return }
+    const projectAssetIds = new Set(assets.map(asset => asset.id))
+    const selectedProjectAssetIds = [...new Set(selectedAssetIds)].filter(assetId => projectAssetIds.has(assetId))
+    const existingTaskIds = selectedProjectAssetIds.map(assetId => taskByAsset.get(assetId)?.id).filter((taskId): taskId is string => Boolean(taskId))
+    const unassignedAssetIds = selectedProjectAssetIds.filter(assetId => !taskByAsset.has(assetId))
+    if (!selectedProjectAssetIds.length) { setAssignmentError('현재 프로젝트의 이미지를 다시 선택하세요.'); return }
+    if (unassignedAssetIds.length && !assigneeId) { setAssignmentError('미배정 이미지가 포함되어 있습니다. 신규 배정할 라벨러를 선택하세요.'); return }
+    if (existingTaskIds.length && !assigneeId && reviewerId === KEEP_REVIEWER) { setAssignmentError('변경할 라벨러 또는 검수자를 선택하세요.'); return }
     setAssigning(true)
-    const created: Task[] = []
+    const changed: Task[] = []
     try {
-      for (const mediaAssetIds of assignmentBatches) {
-        created.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: mediaAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId || null, priority: 50 }) }))
+      for (const taskIds of buildAssignmentBatches(existingTaskIds)) {
+        const body: { task_ids: string[]; assigned_to?: string; reviewer_id?: string | null } = { task_ids: taskIds }
+        if (assigneeId) body.assigned_to = assigneeId
+        if (reviewerId !== KEEP_REVIEWER) body.reviewer_id = reviewerId || null
+        changed.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'PATCH', body: JSON.stringify(body) }))
+      }
+      for (const mediaAssetIds of buildAssignmentBatches(unassignedAssetIds)) {
+        changed.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: mediaAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId === KEEP_REVIEWER ? null : reviewerId || null, priority: 50 }) }))
       }
       setSelectedAssetIds([])
-      setAssignmentMessage(`${created.length}개 이미지 작업을 배정했습니다.`)
+      setAssigneeId('')
+      setReviewerId(KEEP_REVIEWER)
+      setAssignmentMessage(`${changed.length}개 이미지의 작업 배정을 저장했습니다.`)
       onRefresh()
     } catch (cause) {
-      if (created.length) onRefresh()
-      setAssignmentError(`${errorText(cause, '작업을 배정하지 못했습니다.')}${created.length ? ` (${created.length}개까지 배정됨)` : ''}`)
+      if (changed.length) onRefresh()
+      setAssignmentError(`${errorText(cause, '작업 배정을 저장하지 못했습니다.')}${changed.length ? ` (${changed.length}개까지 저장됨)` : ''}`)
     }
     finally { setAssigning(false) }
   }
@@ -389,7 +401,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
         <section className="panel assignment-panel"><div className="panel-heading"><div><span className="eyebrow">BATCH ASSIGNMENT</span><h2>등록 영상 및 작업 배정</h2></div><span>{assets.length}개 · 미배정 {selectableAssets.length}개</span></div>
           {assets.length > 0 && <div className="batch-assignment">
             <div className="selection-toolbar"><strong>{selectedAssetIds.length}개 선택</strong><button onClick={() => chooseAssets('all')}>전체 선택</button><button onClick={() => chooseAssets('odd')}>홀수 번째</button><button onClick={() => chooseAssets('even')}>짝수 번째</button><button onClick={() => chooseAssets('none')}>선택 해제</button></div>
-            <div className="assignment-fields"><label>라벨러<select value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">라벨러 선택</option>{users.filter(user => user.role === 'ANNOTATOR' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><label>검수자 (선택)<select value={reviewerId} onChange={event => setReviewerId(event.target.value)}><option value="">검수자 없음</option>{users.filter(user => user.role === 'REVIEWER' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><button className="primary batch-assign-button" onClick={assignSelected} disabled={assigning}><CheckSquare /> {assigning ? '배정 중...' : `${selectedAssetIds.length}개 이미지 배정`}</button></div>
+            <div className="assignment-fields"><label>라벨러<select value={assigneeId} onChange={event => setAssigneeId(event.target.value)}><option value="">기존 라벨러 유지</option>{users.filter(user => user.role === 'ANNOTATOR' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><label>검수자<select value={reviewerId} onChange={event => setReviewerId(event.target.value)}><option value={KEEP_REVIEWER}>기존 검수자 유지</option><option value="">검수자 없음</option>{users.filter(user => user.role === 'REVIEWER' || user.role === 'ADMINISTRATOR').map(user => <option value={user.id} key={user.id}>{user.display_name}</option>)}</select></label><button className="primary batch-assign-button" onClick={assignSelected} disabled={assigning}><CheckSquare /> {assigning ? '저장 중...' : `${selectedAssetIds.length}개 배정 저장`}</button></div>
             {!selectedAssetIds.length && <small className="muted">폴더 체크박스, 영상 카드 또는 전체·홀수·짝수 선택 버튼으로 이미지를 선택하세요.</small>}
             {assignmentMessage && <div className="success-banner assignment-notice" role="status">{assignmentMessage}</div>}
             {assignmentError && <div className="error-banner assignment-notice" role="alert">{assignmentError}</div>}
@@ -404,23 +416,23 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
 function AssetCard({ asset, selected, task, users, onToggle }: { asset: Asset; selected: boolean; task?: Task; users: User[]; onToggle: (assetId: string) => void }) {
   const assignee = users.find(user => user.id === task?.assigned_to)
   const reviewer = users.find(user => user.id === task?.reviewer_id)
-  return <article className={`asset-card selectable ${selected ? 'selected' : ''} ${task ? 'assigned' : ''}`}><label className="asset-selector"><input type="checkbox" checked={selected} disabled={!!task} onChange={() => onToggle(asset.id)} aria-label={`${asset.original_filename} 선택`} /><span>{task ? '배정됨' : '선택'}</span></label><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong title={asset.original_filename}>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small>{task ? <div className="assignment-summary"><strong>{assignee?.display_name ?? '미지정'}</strong><small>{reviewer ? `검수 ${reviewer.display_name}` : '검수자 없음'} · {task.status}</small></div> : <small className="available-badge">배정 가능</small>}</article>
+  return <article className={`asset-card selectable ${selected ? 'selected' : ''} ${task ? 'assigned' : ''}`}><label className="asset-selector"><input type="checkbox" checked={selected} onChange={() => onToggle(asset.id)} aria-label={`${asset.original_filename} 선택`} /><span>{task ? '배정 변경' : '선택'}</span></label><div className="asset-preview"><FileImage />{asset.phi_suspected && <span title="DICOM 개인정보 태그 의심"><ShieldAlert /></span>}</div><strong title={asset.original_filename}>{asset.original_filename}</strong><small>{asset.width} × {asset.height} · {asset.frame_count} frame</small>{task ? <div className="assignment-summary"><strong>{assignee?.display_name ?? '미지정'}</strong><small>{reviewer ? `검수 ${reviewer.display_name}` : '검수자 없음'} · {task.status}</small></div> : <small className="available-badge">배정 가능</small>}</article>
 }
 
 function AssetFolderTreeNode({ node, depth, expanded, selectedAssetIds, taskByAsset, users, onToggleOpen, onToggleFolder, onToggleAsset }: { node: AssetFolderNode; depth: number; expanded: Set<string>; selectedAssetIds: string[]; taskByAsset: Map<string, Task>; users: User[]; onToggleOpen: (path: string) => void; onToggleFolder: (node: AssetFolderNode) => void; onToggleAsset: (assetId: string) => void }) {
   const allAssets = collectFolderAssets(node)
   const selectableAssets = allAssets.filter(asset => !taskByAsset.has(asset.id))
-  const selectedCount = selectableAssets.filter(asset => selectedAssetIds.includes(asset.id)).length
-  const allSelected = selectableAssets.length > 0 && selectedCount === selectableAssets.length
+  const selectedCount = allAssets.filter(asset => selectedAssetIds.includes(asset.id)).length
+  const allSelected = allAssets.length > 0 && selectedCount === allAssets.length
   const open = expanded.has(node.path)
   return <section className={`asset-folder-node depth-${Math.min(depth, 4)}`}>
     <header className="asset-folder-header" style={{ marginLeft: `${depth * 18}px` }}>
       <button className="asset-folder-toggle" onClick={() => onToggleOpen(node.path)} aria-expanded={open} aria-label={`${node.name} 폴더 ${open ? '접기' : '열기'}`}>
         {open ? <ChevronDown /> : <ChevronRight />}<Folder /><span><strong>{node.name}</strong><small>전체 {allAssets.length}개 · 미배정 {selectableAssets.length}개{selectedCount ? ` · 선택 ${selectedCount}개` : ''}</small></span>
       </button>
-      <label className={`asset-folder-selector ${allSelected ? 'selected' : selectedCount > 0 ? 'partial' : ''} ${selectableAssets.length ? '' : 'disabled'}`} title={selectableAssets.length ? `${node.name} 안의 미배정 영상 전체 선택` : '배정 가능한 영상이 없습니다.'}>
-        <input type="checkbox" checked={allSelected} disabled={!selectableAssets.length} onChange={() => onToggleFolder(node)} aria-label={`${node.name} 폴더 전체 선택`} />
-        <span>{allSelected ? '전체 해제' : selectedCount ? `${selectedCount}/${selectableAssets.length} 선택` : '폴더 전체 선택'}</span>
+      <label className={`asset-folder-selector ${allSelected ? 'selected' : selectedCount > 0 ? 'partial' : ''}`} title={`${node.name} 안의 영상 전체 선택 또는 배정 변경`}>
+        <input type="checkbox" checked={allSelected} disabled={!allAssets.length} onChange={() => onToggleFolder(node)} aria-label={`${node.name} 폴더 전체 선택`} />
+        <span>{allSelected ? '전체 해제' : selectedCount ? `${selectedCount}/${allAssets.length} 선택` : '폴더 전체 선택'}</span>
       </label>
     </header>
     {open && <div className="asset-folder-contents">

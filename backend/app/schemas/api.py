@@ -182,6 +182,25 @@ class TaskBatchCreate(BaseModel):
         return asset_ids
 
 
+class TaskBatchReassign(BaseModel):
+    task_ids: list[str] = Field(min_length=1)
+    assigned_to: str | None = None
+    reviewer_id: str | None = None
+
+    @field_validator("task_ids")
+    @classmethod
+    def unique_task_ids(cls, task_ids: list[str]) -> list[str]:
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("task_ids must be unique")
+        return task_ids
+
+    @model_validator(mode="after")
+    def require_assignment_change(self) -> "TaskBatchReassign":
+        if not ({"assigned_to", "reviewer_id"} & self.model_fields_set):
+            raise ValueError("assigned_to or reviewer_id must be provided")
+        return self
+
+
 class TaskOut(ORMModel):
     id: str
     project_id: str

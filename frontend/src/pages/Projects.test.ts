@@ -57,6 +57,7 @@ describe('folder-preserving asset display', () => {
     expect(collectFolderAssets(breast).map(asset => asset.id)).toEqual(['benign', 'malignant', 'assigned'])
     expect(toggleFolderAssetSelection([], breast, new Set(['assigned']))).toEqual(['benign', 'malignant'])
     expect(toggleFolderAssetSelection(['benign', 'malignant'], breast, new Set(['assigned']))).toEqual([])
+    expect(toggleFolderAssetSelection([], breast, new Set())).toEqual(['benign', 'malignant', 'assigned'])
   })
 })
 

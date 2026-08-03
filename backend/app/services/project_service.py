@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.entities import AnnotationTask, Dataset, LabelSchemaVersion, MediaAsset, Project, ProjectMember, Role, TaskStatus, User
-from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskBatchCreate, TaskCreate, UserCreate
+from app.schemas.api import LabelSchemaCreate, ProjectCreate, ProjectMemberCreate, TaskBatchCreate, TaskBatchReassign, TaskCreate, UserCreate
 from app.services.audit_service import AuditService
 
 
@@ -170,5 +170,39 @@ class ProjectService:
             self.db.flush()
             self.audit.record(actor, "TASK_CREATED", "task", task.id, project_id, "Annotation task created by batch assignment")
             tasks.append(task)
+        self.db.commit()
+        return tasks
+
+    def reassign_tasks(self, actor: User, project_id: str, payload: TaskBatchReassign) -> list[AnnotationTask]:
+        changes = payload.model_fields_set
+        self._prepare_assignment(
+            actor,
+            project_id,
+            payload.assigned_to if "assigned_to" in changes else None,
+            payload.reviewer_id if "reviewer_id" in changes else None,
+        )
+        tasks: list[AnnotationTask] = []
+        for task_id in payload.task_ids:
+            task = self.db.get(AnnotationTask, task_id)
+            if task is None:
+                raise HTTPException(404, "변경할 작업을 찾을 수 없습니다.")
+            if task.project_id != project_id:
+                raise HTTPException(422, "선택한 작업이 이 프로젝트에 속하지 않습니다.")
+            tasks.append(task)
+
+        for task in tasks:
+            if "assigned_to" in changes:
+                assignee_changed = task.assigned_to != payload.assigned_to
+                task.assigned_to = payload.assigned_to
+                if assignee_changed:
+                    task.lock_owner = None
+                    task.lock_expires_at = None
+                if task.status == TaskStatus.UNASSIGNED and payload.assigned_to:
+                    task.status = TaskStatus.ASSIGNED
+                elif task.status == TaskStatus.ASSIGNED and payload.assigned_to is None:
+                    task.status = TaskStatus.UNASSIGNED
+            if "reviewer_id" in changes:
+                task.reviewer_id = payload.reviewer_id
+            self.audit.record(actor, "TASK_REASSIGNED", "task", task.id, project_id, "Task assignee or reviewer updated")
         self.db.commit()
         return tasks
