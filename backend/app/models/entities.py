@@ -48,6 +48,7 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     password_hash: Mapped[str] = mapped_column(String(255))
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
+    shortcut_settings: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

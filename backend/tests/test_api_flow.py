@@ -31,7 +31,22 @@ def test_http_mvp_setup_flow(tmp_path: Path) -> None:
     login = client.post("/api/v1/auth/login", json={"username":"admin","password":"Strong-password-123"})
     assert login.status_code == 200
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    user_id = client.get("/api/v1/users/me", headers=headers).json()["id"]
+    me = client.get("/api/v1/users/me", headers=headers).json()
+    user_id = me["id"]
+    assert me["shortcut_settings"] == {}
+    shortcuts = client.patch(
+        "/api/v1/users/me/shortcuts",
+        headers=headers,
+        json={"previous_image": "KeyA", "next_image": "KeyD", "submit": "Enter"},
+    )
+    assert shortcuts.status_code == 200
+    assert shortcuts.json()["shortcut_settings"] == {"previous_image": "KeyA", "next_image": "KeyD", "submit": "Enter"}
+    duplicate_shortcuts = client.patch(
+        "/api/v1/users/me/shortcuts",
+        headers=headers,
+        json={"previous_image": "KeyA", "next_image": "KeyA", "submit": "Enter"},
+    )
+    assert duplicate_shortcuts.status_code == 422
     project = client.post("/api/v1/projects", headers=headers, json={"name":"Fetal US","description":"Synthetic test","task_types":["bbox","polygon"]})
     assert project.status_code == 201; project_id = project.json()["id"]
     manager = client.post("/api/v1/users", headers=headers, json={"username":"manager","display_name":"Project Manager","role":"PROJECT_MANAGER","password":"Manager-password-123"})

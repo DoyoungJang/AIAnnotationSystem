@@ -1,0 +1,64 @@
+.image-navigation {
+  display: grid;
+  grid-template-columns: 30px 1fr 30px;
+  gap: 4px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.image-navigation button { padding: 5px; }
+.image-navigation span { text-align: center; font: 500 9px 'DM Mono'; color: var(--muted); }
+
+.navigation-help {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.navigation-help kbd { padding: 5px 2px; }
+.navigation-help small { grid-column: 1 / -1; color: var(--muted); font-size: 9px; }
+.thumbnail small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.classification kbd { margin-left: auto; }
+.workspace-header { position: relative; }
+.workspace-header .primary kbd { border-color: #0b554d; color: #07352f; background: #ffffff30; }
+
+.shortcut-popover {
+  position: absolute !important;
+  display: block !important;
+  right: 14px;
+  top: 64px;
+  width: 370px;
+  z-index: 30;
+  background: #0d1c26;
+  border: 1px solid #284653;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 18px 55px #000b;
+}
+
+.shortcut-heading {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  margin: 0 !important;
+}
+
+.shortcut-heading h3 { margin: 4px 0 0; }
+.shortcut-heading button { padding: 5px; border: 0; background: transparent; }
+.shortcut-popover > p { color: var(--muted); font-size: 11px; line-height: 1.55; margin: 10px 0 15px; }
+
+.shortcut-field {
+  display: grid;
+  grid-template-columns: 1fr 155px;
+  align-items: center;
+  gap: 12px;
+  margin: 9px 0;
+  font-size: 12px;
+}
+
+.shortcut-field input { text-align: center; font: 500 11px 'DM Mono'; padding: 9px; cursor: pointer; }
+.shortcut-field input:focus { background: #102b2a; }
+.shortcut-popover footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.shortcut-error { color: #ff9cac; background: #28151c; border: 1px solid #6e3541; border-radius: 6px; padding: 8px 10px; margin-top: 10px; font-size: 11px; }

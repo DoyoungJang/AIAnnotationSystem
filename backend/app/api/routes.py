@@ -46,6 +46,14 @@ def logout(user: User = Depends(current_user)) -> Response:
 def me(user: User = Depends(current_user)) -> User: return user
 
 
+@router.patch("/users/me/shortcuts", response_model=UserOut)
+def update_my_shortcuts(payload: UserShortcutSettings, db: Session = Depends(get_db), user: User = Depends(current_user)) -> User:
+    user.shortcut_settings = payload.model_dump()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @router.post("/users", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)) -> User:
     return ProjectService(db).create_user(actor, payload)

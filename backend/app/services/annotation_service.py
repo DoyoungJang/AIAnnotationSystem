@@ -12,7 +12,7 @@ from app.schemas.api import AnnotationSaveRequest, TaskListOut, TaskOut
 from app.services.audit_service import AuditService
 
 
-EDITABLE = {TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS, TaskStatus.DRAFT, TaskStatus.CHANGES_REQUESTED}
+EDITABLE = {TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS, TaskStatus.DRAFT, TaskStatus.SUBMITTED, TaskStatus.CHANGES_REQUESTED}
 
 
 class AnnotationService:
@@ -68,7 +68,7 @@ class AnnotationService:
             raise HTTPException(409, "현재 상태의 작업은 수정할 수 없습니다.")
         task.lock_owner = actor.id
         task.lock_expires_at = now + timedelta(seconds=self.settings.lock_ttl_seconds)
-        if task.status in {TaskStatus.ASSIGNED, TaskStatus.CHANGES_REQUESTED}:
+        if task.status in {TaskStatus.ASSIGNED, TaskStatus.SUBMITTED, TaskStatus.CHANGES_REQUESTED}:
             task.status = TaskStatus.IN_PROGRESS
         self.db.commit()
         return task

@@ -61,6 +61,43 @@ def test_lock_save_version_conflict_submit_and_review(context) -> None:
     assert db.query(Review).count() == 1
 
 
+def test_annotator_can_reopen_edit_and_resubmit_before_review(context) -> None:
+    db, settings, annotator, reviewer, _, task = context
+    service = AnnotationService(db, settings)
+    service.acquire_lock(annotator, task.id)
+    saved_task, annotations = service.save(
+        annotator,
+        task.id,
+        AnnotationSaveRequest(
+            client_version=0,
+            annotations=[AnnotationInput(annotation_type="bbox", label_id="HEAD", image_width=100, image_height=80, geometry={"x": 10, "y": 10, "width": 20, "height": 15})],
+        ),
+        "initial-save",
+    )
+    assert saved_task.aggregate_version == 1
+    assert service.submit(annotator, task.id).status == TaskStatus.SUBMITTED
+
+    reopened = service.acquire_lock(annotator, task.id)
+    assert reopened.status == TaskStatus.IN_PROGRESS
+    with pytest.raises(HTTPException) as review_while_editing:
+        ReviewService(db).review(reviewer, task.id, ReviewRequest(decision="APPROVED", comment="too early"))
+    assert review_while_editing.value.status_code == 409
+
+    edited_task, edited_annotations = service.save(
+        annotator,
+        task.id,
+        AnnotationSaveRequest(
+            client_version=1,
+            annotations=[AnnotationInput(annotation_id=annotations[0].id, annotation_type="bbox", label_id="HEAD", image_width=100, image_height=80, geometry={"x": 15, "y": 12, "width": 24, "height": 18})],
+        ),
+        "resubmission-edit",
+    )
+    assert edited_task.status == TaskStatus.DRAFT
+    assert edited_task.aggregate_version == 2
+    assert edited_annotations[0].geometry_json["x"] == 15
+    assert service.submit(annotator, task.id).status == TaskStatus.SUBMITTED
+
+
 def test_geometry_rejects_out_of_bounds_bbox() -> None:
     with pytest.raises(ValueError):
         AnnotationInput(annotation_type="bbox", label_id="HEAD", image_width=100, image_height=80, geometry={"x": 90, "y": 10, "width": 20, "height": 15})

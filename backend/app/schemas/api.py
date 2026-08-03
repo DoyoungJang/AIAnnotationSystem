@@ -27,6 +27,31 @@ class UserOut(ORMModel):
     display_name: str
     role: Role
     status: str
+    shortcut_settings: dict[str, str] = Field(default_factory=dict)
+
+
+class UserShortcutSettings(BaseModel):
+    previous_image: str = Field(default="ArrowLeft", min_length=1, max_length=40)
+    next_image: str = Field(default="ArrowRight", min_length=1, max_length=40)
+    submit: str = Field(default="Space", min_length=1, max_length=40)
+
+    @field_validator("previous_image", "next_image", "submit")
+    @classmethod
+    def validate_shortcut(cls, value: str) -> str:
+        parts = value.split("+")
+        modifiers = {"Control", "Alt", "Shift", "Meta"}
+        if any(not part or len(part) > 20 for part in parts):
+            raise ValueError("올바른 단축키 형식이 아닙니다.")
+        if any(part not in modifiers for part in parts[:-1]):
+            raise ValueError("지원하지 않는 보조 키입니다.")
+        return value
+
+    @model_validator(mode="after")
+    def shortcuts_must_be_unique(self):
+        values = [self.previous_image, self.next_image, self.submit]
+        if len(set(values)) != len(values):
+            raise ValueError("단축키는 서로 다르게 지정해야 합니다.")
+        return self
 
 
 class UserCreate(BaseModel):

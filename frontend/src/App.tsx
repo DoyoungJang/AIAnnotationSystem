@@ -30,7 +30,7 @@ export default function App() {
   if (!authenticated || !user) return <Login onLogin={() => { setPage('dashboard'); setOpenTask(undefined); setAuthenticated(true) }} />
   if (openTask) {
     const adjacentTasks = adjacentTasksInSameFolder(tasks, openTask)
-    return <TaskWorkspace key={openTask.id} initialTask={openTask} previousTask={adjacentTasks.previous} nextTask={adjacentTasks.next} user={user} onClose={() => setOpenTask(undefined)} onNavigate={setOpenTask} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} />
+    return <TaskWorkspace key={openTask.id} initialTask={openTask} previousTask={adjacentTasks.previous} nextTask={adjacentTasks.next} user={user} onClose={() => setOpenTask(undefined)} onNavigate={setOpenTask} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} onUserChanged={() => void queryClient.invalidateQueries({ queryKey: ['me'] })} />
   }
 
   const refresh = () => {
