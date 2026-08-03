@@ -80,3 +80,23 @@ export function buildTaskFolderTree(tasks: Task[], projectName: string): TaskFol
 export function collectFolderTasks(node: TaskFolderNode): Task[] {
   return [...node.tasks, ...node.children.flatMap(collectFolderTasks)]
 }
+
+const NEXT_LABELING_STATUSES = new Set<Task['status']>(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'])
+
+export function taskFolderPath(task: Task): string {
+  const relativePath = (task.media_asset_relative_path || task.media_asset_original_filename || task.media_asset_id).replaceAll('\\', '/')
+  return relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
+}
+
+export function nextTaskInSameFolder(tasks: Task[], current: Task): Task | undefined {
+  const folder = taskFolderPath(current)
+  const sameFolder = [...tasks, ...(tasks.some(task => task.id === current.id) ? [] : [current])]
+    .filter(task => task.project_id === current.project_id && task.assigned_to === current.assigned_to && taskFolderPath(task) === folder)
+    .sort((left, right) => {
+      const leftPath = left.media_asset_relative_path || left.media_asset_original_filename || left.media_asset_id
+      const rightPath = right.media_asset_relative_path || right.media_asset_original_filename || right.media_asset_id
+      return leftPath.localeCompare(rightPath, 'ko') || left.id.localeCompare(right.id)
+    })
+  const currentIndex = sameFolder.findIndex(task => task.id === current.id)
+  return sameFolder.slice(currentIndex + 1).find(task => NEXT_LABELING_STATUSES.has(task.status))
+}

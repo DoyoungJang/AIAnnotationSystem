@@ -5,7 +5,7 @@ import { Login } from './components/Login'
 import { Layout, type Page } from './components/Layout'
 import { Admin } from './pages/Admin'
 import { Dashboard } from './pages/Dashboard'
-import { Tasks } from './pages/Tasks'
+import { nextTaskInSameFolder, Tasks } from './pages/Tasks'
 import { TaskWorkspace } from './pages/TaskWorkspace'
 import type { Project, Task, User } from './types'
 
@@ -28,7 +28,7 @@ export default function App() {
   }, [error])
 
   if (!authenticated || !user) return <Login onLogin={() => { setPage('dashboard'); setOpenTask(undefined); setAuthenticated(true) }} />
-  if (openTask) return <TaskWorkspace initialTask={openTask} user={user} onClose={() => setOpenTask(undefined)} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} />
+  if (openTask) return <TaskWorkspace key={openTask.id} initialTask={openTask} nextTask={nextTaskInSameFolder(tasks, openTask)} user={user} onClose={() => setOpenTask(undefined)} onNext={setOpenTask} onChanged={() => void queryClient.invalidateQueries({ queryKey: ['tasks'] })} />
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['projects'] })

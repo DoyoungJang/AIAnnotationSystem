@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../types'
-import { buildTaskProjectTrees, collectFolderTasks } from './Tasks'
+import { buildTaskProjectTrees, collectFolderTasks, nextTaskInSameFolder } from './Tasks'
 
 describe('annotator task folder tree', () => {
   it('groups assigned tasks by project and preserves nested upload folders', () => {
@@ -22,5 +22,17 @@ describe('annotator task folder tree', () => {
     const root = buildTaskProjectTrees([task])[0]
     expect(root.tasks).toEqual([task])
     expect(root.children).toEqual([])
+  })
+
+  it('selects the next unfinished task only from the same folder and assignee', () => {
+    const base = { project_id: 'project', assigned_to: 'annotator', status: 'ASSIGNED', media_asset_id: 'asset' } as Task
+    const current = { ...base, id: 'a', media_asset_relative_path: 'patient-1/a.png' }
+    const submitted = { ...base, id: 'b', status: 'SUBMITTED', media_asset_relative_path: 'patient-1/b.png' } as Task
+    const next = { ...base, id: 'c', media_asset_relative_path: 'patient-1/c.png' }
+    const otherFolder = { ...base, id: 'd', media_asset_relative_path: 'patient-2/d.png' }
+    const otherAssignee = { ...base, id: 'e', assigned_to: 'other', media_asset_relative_path: 'patient-1/e.png' }
+
+    expect(nextTaskInSameFolder([otherFolder, otherAssignee, next, submitted, current], current)).toBe(next)
+    expect(nextTaskInSameFolder([current, submitted, otherFolder], current)).toBeUndefined()
   })
 })
