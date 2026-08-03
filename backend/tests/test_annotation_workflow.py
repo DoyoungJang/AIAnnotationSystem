@@ -59,6 +59,7 @@ def test_lock_save_version_conflict_submit_and_review(context) -> None:
     approved = ReviewService(db).review(reviewer, task.id, ReviewRequest(decision="APPROVED", comment="ok"))
     assert approved.status == TaskStatus.APPROVED
     assert db.query(Review).count() == 1
+    assert all(item.id != task.id for item in AnnotationService(db, settings).my_tasks(annotator))
 
 
 def test_annotator_can_reopen_edit_and_resubmit_before_review(context) -> None:

@@ -43,7 +43,7 @@ class AnnotationService:
             .order_by(AnnotationTask.priority.desc(), AnnotationTask.updated_at.desc())
         )
         if actor.role == Role.ANNOTATOR:
-            query = query.where(AnnotationTask.assigned_to == actor.id)
+            query = query.where(AnnotationTask.assigned_to == actor.id, AnnotationTask.status != TaskStatus.APPROVED)
         elif actor.role == Role.REVIEWER:
             query = query.where(AnnotationTask.reviewer_id == actor.id)
         return [

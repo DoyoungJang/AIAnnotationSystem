@@ -15,7 +15,7 @@ describe('task workspace access mode', () => {
   })
 
   it('opens submitted and reviewed work in read-only mode', () => {
-    expect(isTaskReadOnly(task('SUBMITTED'), annotator)).toBe(false)
+    expect(isTaskReadOnly(task('SUBMITTED'), annotator)).toBe(true)
     expect(isTaskReadOnly(task('IN_REVIEW'), annotator)).toBe(true)
     expect(isTaskReadOnly(task('APPROVED'), annotator)).toBe(true)
     expect(isTaskReadOnly(task('REJECTED'), annotator)).toBe(true)

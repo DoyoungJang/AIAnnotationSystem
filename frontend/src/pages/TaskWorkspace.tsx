@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, Keyboard, RotateCcw, Save, Send, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleAlert, Keyboard, Pencil, RotateCcw, Save, Send, X } from 'lucide-react'
 import { imageUrl as getImageUrl, request } from '../api/client'
 import { AnnotationViewer } from '../viewer/AnnotationViewer'
 import { useAnnotationStore } from '../stores/annotationStore'
@@ -22,7 +22,7 @@ interface Props {
   onUserChanged: () => void
 }
 
-const EDITABLE_TASK_STATUSES = new Set<Task['status']>(['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'SUBMITTED', 'CHANGES_REQUESTED'])
+const EDITABLE_TASK_STATUSES = new Set<Task['status']>(['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'])
 
 export function isTaskReadOnly(task: Task, user: User): boolean {
   return user.role === 'OBSERVER' || (user.role === 'REVIEWER' && task.status === 'SUBMITTED') || !EDITABLE_TASK_STATUSES.has(task.status)
@@ -41,7 +41,9 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
   const [shortcutDraft, setShortcutDraft] = useState<ShortcutSettings>(() => resolveShortcuts(user.shortcut_settings))
   const [shortcutSaving, setShortcutSaving] = useState(false)
   const [shortcutError, setShortcutError] = useState('')
+  const [revisionStarting, setRevisionStarting] = useState(false)
   const { annotations, deletedAnnotationIds, load, add, remove, selectedLabel, setLabel, dirty, markSaved, setTool } = useAnnotationStore()
+  const submittedByAnnotator = user.role === 'ANNOTATOR' && task.status === 'SUBMITTED'
   const readOnly = isTaskReadOnly(task, user)
   const auto = useAutoSave(task.id, annotations, deletedAnnotationIds, dirty, version, setVersion, markSaved)
   const labelBindings = useMemo(() => labels.map((label, index) => ({ label, shortcut: labelShortcut(label, index) })), [labels])
@@ -96,7 +98,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
         pendingLockReleases.set(task.id, timer)
       }
     }
-  }, [task.id])
+  }, [task.id, readOnly])
 
   const toggleClass = (label: Label) => {
     if (readOnly) return
@@ -137,6 +139,20 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
       if (nextTask) onNavigate(nextTask)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '제출하지 못했습니다.')
+    }
+  }
+
+  const startRevision = async () => {
+    if (!submittedByAnnotator || revisionStarting) return
+    setRevisionStarting(true)
+    setError('')
+    try {
+      const editableTask = await request<Task>(`/tasks/${task.id}/lock`, { method: 'POST' })
+      setTask(editableTask)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '수정 모드로 전환하지 못했습니다.')
+    } finally {
+      setRevisionStarting(false)
     }
   }
 
@@ -228,7 +244,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
       <div className={`save-state ${auto.state}`} title={auto.message}><span />{({ idle: '변경 없음', saving: '저장 중…', saved: '저장됨', offline: '오프라인 임시 저장', conflict: '버전 충돌', error: '저장 실패' } as const)[auto.state]}</div>
       <button onClick={() => { setShortcutDraft(shortcutSettings); setShortcutError(''); setShowShortcutSettings(value => !value) }} title="사용자 단축키 설정"><Keyboard /> 단축키</button>
       <button onClick={() => void auto.save()} disabled={!dirty || readOnly}><Save /> 저장</button>
-      {!readOnly && <button className="primary" onClick={() => void submit()}><Send /> 제출 <kbd>{displayShortcut(shortcutSettings.submit)}</kbd></button>}
+      {submittedByAnnotator ? <button className="primary" onClick={() => void startRevision()} disabled={revisionStarting}><Pencil /> {revisionStarting ? '전환 중…' : '수정'}</button> : !readOnly && <button className="primary" onClick={() => void submit()}><Send /> 제출 <kbd>{displayShortcut(shortcutSettings.submit)}</kbd></button>}
       {user.role === 'REVIEWER' && task.status === 'SUBMITTED' && <><button className="danger" onClick={() => void decide('CHANGES_REQUESTED')}><X /> 수정 요청</button><button className="primary" onClick={() => void decide('APPROVED')}><Check /> 승인</button></>}
       {showShortcutSettings && <div className="shortcut-popover">
         <div className="shortcut-heading"><div><span className="eyebrow">MY SHORTCUTS</span><h3>내 단축키 설정</h3></div><button onClick={() => setShowShortcutSettings(false)} aria-label="닫기"><X /></button></div>
