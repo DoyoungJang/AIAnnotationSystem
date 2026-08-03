@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, rectangleFromPoints } from './AnnotationViewer'
+import { eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, panTransform, rectangleFromPoints } from './AnnotationViewer'
 import type { Annotation } from '../types'
 
 const makeAnnotation = (annotation_type: Annotation['annotation_type'], geometry_json: Record<string, unknown>): Annotation => ({
@@ -51,6 +51,14 @@ describe('live drawing geometry', () => {
 
   it('builds a display-only brightness and contrast filter', () => {
     expect(imageDisplayFilter(135, 80)).toBe('brightness(135%) contrast(80%)')
+  })
+
+  it('pans the image by the pointer drag distance without changing zoom', () => {
+    expect(panTransform(
+      { scale: 2, offsetX: 40, offsetY: -10 },
+      { x: 100, y: 80 },
+      { x: 135, y: 55 },
+    )).toEqual({ scale: 2, offsetX: 75, offsetY: -35 })
   })
 })
 

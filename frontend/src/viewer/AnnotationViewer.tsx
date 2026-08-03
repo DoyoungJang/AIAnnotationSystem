@@ -16,6 +16,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const erasingRef = useRef(false)
   const drawingBrushRef = useRef(false)
   const pointerActiveRef = useRef(false)
+  const rightPanRef = useRef<Point | null>(null)
   const draftRef = useRef<Point[]>([])
   const eraserLastPointRef = useRef<Point | null>(null)
   const eraserPointsRef = useRef<Point[]>([])
@@ -32,6 +33,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const [eraserSize, setEraserSize] = useState(24)
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
+  const [rightPanning, setRightPanning] = useState(false)
   const activeLabel = labels.find(label => label.label_code === selectedLabel) ?? labels[0]
 
   useEffect(() => {
@@ -146,6 +148,15 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   }
 
   const down = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.button === 2) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      pointerActiveRef.current = true
+      rightPanRef.current = { x: event.clientX, y: event.clientY }
+      setRightPanning(true)
+      return
+    }
+    if (event.button !== 0) return
     if (readOnly) return
     event.currentTarget.setPointerCapture(event.pointerId)
     pointerActiveRef.current = true
@@ -167,6 +178,13 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   }
 
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (rightPanRef.current) {
+      const previous = rightPanRef.current
+      const current = { x: event.clientX, y: event.clientY }
+      setTransform(value => panTransform(value, previous, current))
+      rightPanRef.current = current
+      return
+    }
     const source = point(event)
     setHoverPoint(source)
     if (tool === 'pan' && dragStart) {
@@ -181,6 +199,13 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   }
 
   const up = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (rightPanRef.current || event.button === 2) {
+      event.preventDefault()
+      rightPanRef.current = null
+      pointerActiveRef.current = false
+      setRightPanning(false)
+      return
+    }
     if (readOnly) return
     const source = point(event)
     setHoverPoint(source)
@@ -205,6 +230,8 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
 
   const cancel = () => {
     pointerActiveRef.current = false
+    rightPanRef.current = null
+    setRightPanning(false)
     drawingBrushRef.current = false
     setDragStart(null)
     if (tool === 'brush') {
@@ -265,7 +292,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
     </div>
     <canvas
       ref={canvasRef}
-      className={`viewer-canvas tool-${tool}`}
+      className={`viewer-canvas tool-${tool}${rightPanning ? ' tool-pan' : ''}`}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
@@ -274,6 +301,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       onClick={click}
       onDoubleClick={doubleClick}
       onWheel={wheel}
+      onContextMenu={event => event.preventDefault()}
     />
     <div className="viewer-status"><span>{asset.original_filename}</span><span>{asset.width} × {asset.height}</span><span>Zoom {Math.round(transform.scale * 100)}%</span><span>{readOnly ? '읽기 전용' : `${toolName(tool)} · 실시간 미리보기`}</span></div>
   </div>
@@ -281,6 +309,14 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
 
 export function imageDisplayFilter(brightness: number, contrast: number): string {
   return `brightness(${brightness}%) contrast(${contrast}%)`
+}
+
+export function panTransform(transform: ViewTransform, previous: Point, current: Point): ViewTransform {
+  return {
+    ...transform,
+    offsetX: transform.offsetX + current.x - previous.x,
+    offsetY: transform.offsetY + current.y - previous.y,
+  }
 }
 
 function drawGeometry(context: CanvasRenderingContext2D, annotation: Annotation, transform: ViewTransform) {
