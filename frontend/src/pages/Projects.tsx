@@ -293,7 +293,7 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
         const body: { task_ids: string[]; assigned_to?: string; reviewer_id?: string | null } = { task_ids: taskIds }
         if (assigneeId) body.assigned_to = assigneeId
         if (reviewerId !== KEEP_REVIEWER) body.reviewer_id = reviewerId || null
-        changed.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'PATCH', body: JSON.stringify(body) }))
+        changed.push(...await request<Task[]>(`/projects/${selected.id}/tasks/reassign`, { method: 'POST', body: JSON.stringify(body) }))
       }
       for (const mediaAssetIds of buildAssignmentBatches(unassignedAssetIds)) {
         changed.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: mediaAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId === KEEP_REVIEWER ? null : reviewerId || null, priority: 50 }) }))

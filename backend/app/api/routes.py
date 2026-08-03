@@ -161,6 +161,10 @@ def create_tasks(project_id: str, payload: TaskBatchCreate, db: Session = Depend
 def reassign_tasks(project_id: str, payload: TaskBatchReassign, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).reassign_tasks(actor, project_id, payload)
 
 
+@router.post("/projects/{project_id}/tasks/reassign", response_model=list[TaskOut])
+def reassign_tasks_compatible(project_id: str, payload: TaskBatchReassign, db: Session = Depends(get_db), actor: User = Depends(current_user)): return ProjectService(db).reassign_tasks(actor, project_id, payload)
+
+
 @router.get("/tasks/my", response_model=list[TaskListOut])
 def my_tasks(db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return AnnotationService(db, settings).my_tasks(actor)
 
