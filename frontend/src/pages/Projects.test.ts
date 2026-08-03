@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Asset, LabelPresetNode } from '../types'
-import { buildAssetFolderTree, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
+import { buildAssetFolderTree, buildAssignmentBatches, buildUploadBatches, canDeletePresetNode, childrenInPresetFolder, collectFolderAssets, groupAssetsByFolder, normalizeLabelCode, presetDescendantIds, presetFolderTrail, safeExportFolderName, selectAssetIds, toggleFolderAssetSelection } from './Projects'
 
 const assets = ['one', 'two', 'three', 'four', 'five'].map(id => ({ id })) as Asset[]
 
@@ -19,6 +19,14 @@ describe('asset batch selection', () => {
 
   it('clears the selection', () => {
     expect(selectAssetIds(assets, 'none')).toEqual([])
+  })
+
+  it('removes duplicate asset ids before applying odd-position selection', () => {
+    expect(selectAssetIds([assets[0], assets[1], assets[0], assets[2]], 'odd')).toEqual(['one', 'three'])
+  })
+
+  it('deduplicates and splits large assignments to the API limit', () => {
+    expect(buildAssignmentBatches(['one', 'two', 'one', 'three', 'four'], 2)).toEqual([['one', 'two'], ['three', 'four']])
   })
 })
 

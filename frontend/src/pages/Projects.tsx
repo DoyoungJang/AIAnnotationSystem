@@ -11,6 +11,7 @@ const ROOT_ASSET_FOLDER_PATH = '__all_assets__'
 const SUPPORTED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff', 'dcm', 'dicom'])
 const UPLOAD_BATCH_FILE_LIMIT = 200
 const UPLOAD_BATCH_BYTE_LIMIT = 64 * 1024 * 1024
+const ASSIGNMENT_BATCH_LIMIT = 1000
 
 interface ImportResult { dataset_id: string; assets: Asset[]; duplicate_count: number }
 
@@ -278,13 +279,22 @@ export function Projects({ actor, projects, tasks, users, onRefresh }: { actor: 
     if (!selected) { setAssignmentError('프로젝트를 먼저 선택하세요.'); return }
     if (!selectedAssetIds.length) { setAssignmentError('배정할 이미지를 한 개 이상 선택하세요.'); return }
     if (!assigneeId) { setAssignmentError('라벨러를 선택하세요.'); return }
+    const selectableAssetIds = new Set(selectableAssets.map(asset => asset.id))
+    const assignmentBatches = buildAssignmentBatches(selectedAssetIds.filter(assetId => selectableAssetIds.has(assetId)))
+    if (!assignmentBatches.length) { setAssignmentError('현재 프로젝트에서 배정 가능한 이미지를 다시 선택하세요.'); return }
     setAssigning(true)
+    const created: Task[] = []
     try {
-      const created = await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: selectedAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId || null, priority: 50 }) })
+      for (const mediaAssetIds of assignmentBatches) {
+        created.push(...await request<Task[]>(`/projects/${selected.id}/tasks/batch`, { method: 'POST', body: JSON.stringify({ media_asset_ids: mediaAssetIds, assigned_to: assigneeId, reviewer_id: reviewerId || null, priority: 50 }) }))
+      }
       setSelectedAssetIds([])
       setAssignmentMessage(`${created.length}개 이미지 작업을 배정했습니다.`)
       onRefresh()
-    } catch (cause) { setAssignmentError(errorText(cause, '작업을 배정하지 못했습니다.')) }
+    } catch (cause) {
+      if (created.length) onRefresh()
+      setAssignmentError(`${errorText(cause, '작업을 배정하지 못했습니다.')}${created.length ? ` (${created.length}개까지 배정됨)` : ''}`)
+    }
     finally { setAssigning(false) }
   }
   function clearNotices() { setMessage(''); setError('') }
@@ -473,7 +483,18 @@ export function groupAssetsByFolder(assets: Asset[]): Array<{ path: string; asse
     .map(([path, grouped]) => ({ path, assets: grouped.sort((left, right) => (left.relative_path || left.original_filename).localeCompare(right.relative_path || right.original_filename, 'ko')) }))
 }
 
-function errorText(cause: unknown, fallback: string) { return cause instanceof ApiError ? String(cause.detail) : fallback }
+function errorText(cause: unknown, fallback: string) {
+  if (!(cause instanceof ApiError)) return fallback
+  if (Array.isArray(cause.detail)) {
+    const messages = cause.detail.map(item => {
+      if (typeof item === 'object' && item !== null && 'msg' in item) return String((item as { msg: unknown }).msg)
+      return String(item)
+    })
+    return messages.join(' / ') || fallback
+  }
+  if (typeof cause.detail === 'object' && cause.detail !== null && 'message' in cause.detail) return String((cause.detail as { message: unknown }).message)
+  return String(cause.detail || fallback)
+}
 
 function roleName(role: User['role']) {
   return { ADMINISTRATOR: 'Sudo 관리자', PROJECT_MANAGER: '프로젝트 관리자', ANNOTATOR: '라벨러', REVIEWER: '검수자', OBSERVER: '관찰자' }[role]
@@ -481,7 +502,21 @@ function roleName(role: User['role']) {
 
 export function selectAssetIds(assets: Asset[], mode: AssetSelectionMode): string[] {
   if (mode === 'none') return []
-  return assets.filter((_, index) => mode === 'all' || (mode === 'odd' ? index % 2 === 0 : index % 2 === 1)).map(asset => asset.id)
+  const seen = new Set<string>()
+  const uniqueAssets = assets.filter(asset => {
+    if (seen.has(asset.id)) return false
+    seen.add(asset.id)
+    return true
+  })
+  return uniqueAssets.filter((_, index) => mode === 'all' || (mode === 'odd' ? index % 2 === 0 : index % 2 === 1)).map(asset => asset.id)
+}
+
+export function buildAssignmentBatches(assetIds: string[], maxItems = ASSIGNMENT_BATCH_LIMIT): string[][] {
+  if (maxItems < 1) throw new RangeError('Assignment batch limit must be positive.')
+  const uniqueIds = [...new Set(assetIds)]
+  const batches: string[][] = []
+  for (let index = 0; index < uniqueIds.length; index += maxItems) batches.push(uniqueIds.slice(index, index + maxItems))
+  return batches
 }
 
 export function normalizeLabelCode(value: string): string {
