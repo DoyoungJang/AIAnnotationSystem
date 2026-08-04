@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../types'
-import { adjacentTasksInSameFolder, buildTaskProjectTrees, collectFolderTasks, nextTaskInSameFolder } from './Tasks'
+import { adjacentTasksInSameFolder, buildTaskProjectTrees, collectFolderTasks, filterLabelingTasks, labelingTaskFilter, nextTaskInSameFolder } from './Tasks'
 
 describe('annotator task folder tree', () => {
+  it('separates work before and after submission', () => {
+    const before = ['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'].map((status, index) => ({ id: `before-${index}`, status }) as Task)
+    const submitted = ['SUBMITTED', 'IN_REVIEW', 'APPROVED', 'REJECTED'].map((status, index) => ({ id: `submitted-${index}`, status }) as Task)
+    const tasks = [...before, ...submitted]
+
+    expect(labelingTaskFilter(before[0])).toBe('BEFORE_SUBMIT')
+    expect(labelingTaskFilter(submitted[0])).toBe('SUBMITTED')
+    expect(filterLabelingTasks(tasks, 'BEFORE_SUBMIT')).toEqual(before)
+    expect(filterLabelingTasks(tasks, 'SUBMITTED')).toEqual(submitted)
+    expect(filterLabelingTasks(tasks, 'ALL')).toBe(tasks)
+  })
+
   it('groups assigned tasks by project and preserves nested upload folders', () => {
     const tasks = [
       { id: 'b', project_id: 'breast', project_name: 'Breast QA', media_asset_id: 'asset-b', media_asset_relative_path: 'Breast cancer/malignant/b.png' },

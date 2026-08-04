@@ -4,9 +4,23 @@ import type { Task } from '../types'
 import { Status } from './Dashboard'
 
 export interface TaskFolderNode { name: string; path: string; tasks: Task[]; children: TaskFolderNode[] }
+export type LabelingTaskFilter = 'ALL' | 'BEFORE_SUBMIT' | 'SUBMITTED'
+
+const SUBMITTED_TASK_STATUSES = new Set<Task['status']>(['SUBMITTED', 'IN_REVIEW', 'APPROVED', 'REJECTED'])
+
+export function labelingTaskFilter(task: Task): Exclude<LabelingTaskFilter, 'ALL'> {
+  return SUBMITTED_TASK_STATUSES.has(task.status) ? 'SUBMITTED' : 'BEFORE_SUBMIT'
+}
+
+export function filterLabelingTasks(tasks: Task[], filter: LabelingTaskFilter): Task[] {
+  return filter === 'ALL' ? tasks : tasks.filter(task => labelingTaskFilter(task) === filter)
+}
 
 export function Tasks({ tasks, onOpen, review = false }: { tasks: Task[]; onOpen: (task: Task) => void; review?: boolean }) {
-  const visible = useMemo(() => review ? tasks.filter(task => ['SUBMITTED', 'IN_REVIEW'].includes(task.status)) : tasks, [review, tasks])
+  const [labelingFilter, setLabelingFilter] = useState<LabelingTaskFilter>('ALL')
+  const beforeSubmitCount = useMemo(() => tasks.filter(task => labelingTaskFilter(task) === 'BEFORE_SUBMIT').length, [tasks])
+  const submittedCount = tasks.length - beforeSubmitCount
+  const visible = useMemo(() => review ? tasks.filter(task => ['SUBMITTED', 'IN_REVIEW'].includes(task.status)) : filterLabelingTasks(tasks, labelingFilter), [review, tasks, labelingFilter])
   const projectTrees = useMemo(() => buildTaskProjectTrees(visible), [visible])
   const [expandedFolders, setExpandedFolders] = useState<string[]>([])
 
@@ -19,6 +33,11 @@ export function Tasks({ tasks, onOpen, review = false }: { tasks: Task[]; onOpen
 
   return <>
     <header className="page-header"><div><span className="eyebrow">{review ? 'QUALITY REVIEW' : 'ANNOTATION QUEUE'}</span><h1>{review ? '검수 대기열' : '내 작업'}</h1><p>{review ? '제출된 라벨을 확인하고 승인 또는 수정 요청합니다.' : '배정된 영상을 라벨링하고, 제출 이후 결과도 읽기 전용으로 확인할 수 있습니다.'}</p></div></header>
+    {!review && <div className="task-status-filters" role="group" aria-label="제출 상태별 작업 보기">
+      <button className={labelingFilter === 'ALL' ? 'active' : ''} onClick={() => setLabelingFilter('ALL')}>전체 <strong>{tasks.length}</strong></button>
+      <button className={labelingFilter === 'BEFORE_SUBMIT' ? 'active' : ''} onClick={() => setLabelingFilter('BEFORE_SUBMIT')}>제출 전 <strong>{beforeSubmitCount}</strong></button>
+      <button className={labelingFilter === 'SUBMITTED' ? 'active' : ''} onClick={() => setLabelingFilter('SUBMITTED')}>제출 완료 <strong>{submittedCount}</strong></button>
+    </div>}
     {projectTrees.length ? <section className="task-folder-list">{projectTrees.map(tree => <TaskFolderTree key={tree.path} node={tree} depth={0} expanded={expanded} onToggle={toggleFolder} onOpen={onOpen} />)}</section> : <div className="empty panel">표시할 작업이 없습니다.</div>}
   </>
 }

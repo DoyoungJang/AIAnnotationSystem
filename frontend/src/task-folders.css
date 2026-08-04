@@ -1,3 +1,35 @@
+.task-status-filters {
+  display: flex;
+  gap: 8px;
+  margin: -12px 0 18px;
+}
+
+.task-status-filters button {
+  min-width: 112px;
+  justify-content: space-between;
+  color: #9eb1ba;
+}
+
+.task-status-filters button strong {
+  min-width: 25px;
+  padding: 3px 6px;
+  border-radius: 12px;
+  background: #1a303a;
+  color: #b9ccd4;
+  font: 600 9px 'DM Mono';
+}
+
+.task-status-filters button.active {
+  border-color: var(--teal);
+  background: #17322f;
+  color: #9af2e5;
+}
+
+.task-status-filters button.active strong {
+  background: #235149;
+  color: #b6fff4;
+}
+
 .task-folder-list {
   display: flex;
   flex-direction: column;
