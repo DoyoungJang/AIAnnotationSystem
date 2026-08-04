@@ -19,6 +19,12 @@ interface Props {
   onChanged: () => void
 }
 
+const EDITABLE_TASK_STATUSES = new Set<Task['status']>(['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'])
+
+export function isTaskReadOnly(task: Task, user: User): boolean {
+  return user.role === 'OBSERVER' || !EDITABLE_TASK_STATUSES.has(task.status)
+}
+
 export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClose, onNavigate, onChanged }: Props) {
   const [task, setTask] = useState(initialTask)
   const [asset, setAsset] = useState<Asset>()
@@ -31,7 +37,7 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
     annotations, deletedAnnotationIds, load, add, remove, selectedLabel, setLabel,
     dirty, markSaved, tool, setTool,
   } = useAnnotationStore()
-  const readOnly = task.status === 'APPROVED' || user.role === 'OBSERVER' || (user.role === 'REVIEWER' && task.status === 'SUBMITTED')
+  const readOnly = isTaskReadOnly(task, user)
   const auto = useAutoSave(task.id, annotations, deletedAnnotationIds, dirty, version, setVersion, markSaved)
   const classification = labels.filter(label => label.annotation_type === 'classification')
 

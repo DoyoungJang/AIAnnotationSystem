@@ -18,7 +18,7 @@ export function Tasks({ tasks, onOpen, review = false }: { tasks: Task[]; onOpen
   const toggleFolder = (path: string) => setExpandedFolders(current => current.includes(path) ? current.filter(item => item !== path) : [...current, path])
 
   return <>
-    <header className="page-header"><div><span className="eyebrow">{review ? 'QUALITY REVIEW' : 'ANNOTATION QUEUE'}</span><h1>{review ? '검수 대기열' : '내 작업'}</h1><p>{review ? '제출된 라벨을 확인하고 승인 또는 수정 요청합니다.' : '프로젝트와 폴더를 열어 배정된 영상을 확인하고 라벨링을 시작하세요.'}</p></div></header>
+    <header className="page-header"><div><span className="eyebrow">{review ? 'QUALITY REVIEW' : 'ANNOTATION QUEUE'}</span><h1>{review ? '검수 대기열' : '내 작업'}</h1><p>{review ? '제출된 라벨을 확인하고 승인 또는 수정 요청합니다.' : '배정된 영상을 라벨링하고, 제출 이후 결과도 읽기 전용으로 확인할 수 있습니다.'}</p></div></header>
     {projectTrees.length ? <section className="task-folder-list">{projectTrees.map(tree => <TaskFolderTree key={tree.path} node={tree} depth={0} expanded={expanded} onToggle={toggleFolder} onOpen={onOpen} />)}</section> : <div className="empty panel">표시할 작업이 없습니다.</div>}
   </>
 }
