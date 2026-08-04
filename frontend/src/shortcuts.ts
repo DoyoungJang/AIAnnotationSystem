@@ -3,7 +3,7 @@ import type { Label, ShortcutSettings } from './types'
 export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   previous_image: 'ArrowLeft',
   next_image: 'ArrowRight',
-  submit: 'Space',
+  submit: 'KeyS',
 }
 
 const MODIFIER_CODES = new Set(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'])

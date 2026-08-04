@@ -6,7 +6,7 @@ const event = (code: string, key = code): KeyboardEvent => ({ code, key, ctrlKey
 
 describe('labeling shortcuts', () => {
   it('uses the requested defaults and merges stored user settings', () => {
-    expect(resolveShortcuts()).toEqual({ previous_image: 'ArrowLeft', next_image: 'ArrowRight', submit: 'Space' })
+    expect(resolveShortcuts()).toEqual({ previous_image: 'ArrowLeft', next_image: 'ArrowRight', submit: 'KeyS' })
     expect(resolveShortcuts({ submit: 'Enter' }).submit).toBe('Enter')
   })
 
@@ -16,8 +16,9 @@ describe('labeling shortcuts', () => {
     expect(displayShortcut('Control+ArrowRight')).toBe('Ctrl + →')
   })
 
-  it('matches arrows, space, top-row digits, and numpad digits', () => {
+  it('matches arrows, letter shortcuts, space, top-row digits, and numpad digits', () => {
     expect(matchesShortcut(event('ArrowLeft'), 'ArrowLeft')).toBe(true)
+    expect(matchesShortcut(event('KeyS', 's'), 'KeyS')).toBe(true)
     expect(matchesShortcut(event('Space', ' '), 'Space')).toBe(true)
     expect(matchesShortcut(event('Digit2', '2'), '2')).toBe(true)
     expect(matchesShortcut(event('Numpad2', '2'), '2')).toBe(true)

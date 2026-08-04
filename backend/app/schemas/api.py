@@ -33,7 +33,7 @@ class UserOut(ORMModel):
 class UserShortcutSettings(BaseModel):
     previous_image: str = Field(default="ArrowLeft", min_length=1, max_length=40)
     next_image: str = Field(default="ArrowRight", min_length=1, max_length=40)
-    submit: str = Field(default="Space", min_length=1, max_length=40)
+    submit: str = Field(default="KeyS", min_length=1, max_length=40)
 
     @field_validator("previous_image", "next_image", "submit")
     @classmethod

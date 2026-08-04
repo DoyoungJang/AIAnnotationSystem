@@ -124,7 +124,7 @@ export function collectFolderTasks(node: TaskFolderNode): Task[] {
   return [...node.tasks, ...node.children.flatMap(collectFolderTasks)]
 }
 
-const NEXT_LABELING_STATUSES = new Set<Task['status']>(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'])
+const FORWARD_LABELING_STATUSES = new Set<Task['status']>(['UNASSIGNED', 'ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'CHANGES_REQUESTED'])
 
 export function taskFolderPath(task: Task): string {
   const relativePath = (task.media_asset_relative_path || task.media_asset_original_filename || task.media_asset_id).replaceAll('\\', '/')
@@ -134,7 +134,7 @@ export function taskFolderPath(task: Task): string {
 export function adjacentTasksInSameFolder(tasks: Task[], current: Task): { previous?: Task; next?: Task } {
   const folder = taskFolderPath(current)
   const sameFolder = [...tasks, ...(tasks.some(task => task.id === current.id) ? [] : [current])]
-    .filter(task => task.project_id === current.project_id && task.assigned_to === current.assigned_to && taskFolderPath(task) === folder && (task.id === current.id || NEXT_LABELING_STATUSES.has(task.status)))
+    .filter(task => task.project_id === current.project_id && task.assigned_to === current.assigned_to && taskFolderPath(task) === folder)
     .sort((left, right) => {
       const leftPath = left.media_asset_relative_path || left.media_asset_original_filename || left.media_asset_id
       const rightPath = right.media_asset_relative_path || right.media_asset_original_filename || right.media_asset_id
@@ -143,7 +143,7 @@ export function adjacentTasksInSameFolder(tasks: Task[], current: Task): { previ
   const currentIndex = sameFolder.findIndex(task => task.id === current.id)
   return {
     previous: currentIndex > 0 ? sameFolder[currentIndex - 1] : undefined,
-    next: currentIndex >= 0 ? sameFolder[currentIndex + 1] : undefined,
+    next: currentIndex >= 0 ? sameFolder.slice(currentIndex + 1).find(task => FORWARD_LABELING_STATUSES.has(task.status)) : undefined,
   }
 }
 

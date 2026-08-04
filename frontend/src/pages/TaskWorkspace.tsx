@@ -240,8 +240,8 @@ export function TaskWorkspace({ initialTask, previousTask, nextTask, user, onClo
     <header className="workspace-header">
       <button onClick={onClose}><ArrowLeft /> 작업 목록</button>
       <div><span className="mono">TASK {task.id.slice(0, 8)}</span><Status status={task.status} /></div>
-      <button title={`현재 초안을 저장하고 같은 폴더의 이전 영상으로 이동 (${displayShortcut(shortcutSettings.previous_image)})`} onClick={() => void navigate(previousTask)} disabled={!previousTask || navigating}><ChevronLeft /> 이전</button>
-      <button title={`현재 초안을 저장하고 같은 폴더의 다음 영상으로 이동 (${displayShortcut(shortcutSettings.next_image)})`} onClick={() => void navigate(nextTask)} disabled={!nextTask || navigating}>다음 <ChevronRight /></button>
+      <button title={`현재 초안을 저장하고 같은 폴더의 이전 영상으로 이동 (${displayShortcut(shortcutSettings.previous_image)})`} onClick={() => void navigate(previousTask)} disabled={!previousTask || navigating}><ChevronLeft /> 이전 <kbd>{displayShortcut(shortcutSettings.previous_image)}</kbd></button>
+      <button title={`현재 초안을 저장하고 같은 폴더의 다음 영상으로 이동 (${displayShortcut(shortcutSettings.next_image)})`} onClick={() => void navigate(nextTask)} disabled={!nextTask || navigating}>다음 <kbd>{displayShortcut(shortcutSettings.next_image)}</kbd><ChevronRight /></button>
       <div className={`save-state ${auto.state}`} title={auto.message}><span />{({ idle: '변경 없음', saving: '저장 중…', saved: '저장됨', offline: '오프라인 임시 저장', conflict: '버전 충돌', error: '저장 실패' } as const)[auto.state]}</div>
       <button onClick={() => { setShortcutDraft(shortcutSettings); setShortcutError(''); setShowShortcutSettings(value => !value) }} title="사용자 단축키 설정"><Keyboard /> 단축키</button>
       <button onClick={() => void auto.save()} disabled={!dirty || readOnly}><Save /> 저장</button>

@@ -46,6 +46,6 @@ describe('annotator task folder tree', () => {
 
     expect(nextTaskInSameFolder([otherFolder, otherAssignee, next, submitted, current], current)).toBe(next)
     expect(nextTaskInSameFolder([current, submitted, otherFolder], current)).toBeUndefined()
-    expect(adjacentTasksInSameFolder([next, submitted, current], next)).toEqual({ previous: current, next: undefined })
+    expect(adjacentTasksInSameFolder([next, submitted, current], next)).toEqual({ previous: submitted, next: undefined })
   })
 })
