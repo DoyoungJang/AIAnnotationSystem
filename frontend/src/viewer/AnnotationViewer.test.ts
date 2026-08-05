@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { annotationOpacityRatio, eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, panTransform, rectangleFromPoints } from './AnnotationViewer'
-import type { Annotation } from '../types'
+import { annotationOpacityRatio, brushRenderGroups, drawBrushLayer, eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, panTransform, rectangleFromPoints } from './AnnotationViewer'
+import type { Annotation, Label } from '../types'
 
 const makeAnnotation = (annotation_type: Annotation['annotation_type'], geometry_json: Record<string, unknown>): Annotation => ({
   id: annotation_type,
@@ -14,6 +14,28 @@ const makeAnnotation = (annotation_type: Annotation['annotation_type'], geometry
   confidence: null,
   current_version: 1,
 })
+
+const labels: Label[] = [
+  { label_code: 'LABEL', label_name: 'Label', annotation_type: 'brush', color: '#ff0000', required: false },
+  { label_code: 'OTHER', label_name: 'Other', annotation_type: 'brush', color: '#00ff00', required: false },
+]
+
+function fakeContext(drawAlphas: number[] = []) {
+  let globalAlpha = 1
+  const context = {
+    canvas: { clientWidth: 100, clientHeight: 80 },
+    clearRect() {}, save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, moveTo() {}, lineTo() {}, stroke() {},
+    drawImage() { drawAlphas.push(globalAlpha) },
+    get globalAlpha() { return globalAlpha },
+    set globalAlpha(value: number) { globalAlpha = value },
+    globalCompositeOperation: 'source-over', strokeStyle: '', fillStyle: '', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter',
+  }
+  return context as unknown as CanvasRenderingContext2D
+}
+
+function fakeCanvas(context: CanvasRenderingContext2D) {
+  return { width: 0, height: 0, getContext: () => context } as unknown as HTMLCanvasElement
+}
 
 describe('eraser hit testing', () => {
   it('finds a point inside a bounding box', () => {
@@ -65,6 +87,35 @@ describe('live drawing geometry', () => {
       { x: 100, y: 80 },
       { x: 135, y: 55 },
     )).toEqual({ scale: 2, offsetX: 75, offsetY: -35 })
+  })
+})
+
+describe('brush rendering', () => {
+  const first = makeAnnotation('brush', { strokes: [{ size: 10, points: [{ x: 0, y: 10 }, { x: 30, y: 10 }] }] })
+  const overlapping = { ...first, id: 'overlapping', geometry_json: { strokes: [{ size: 10, points: [{ x: 20, y: 10 }, { x: 50, y: 10 }] }] } }
+
+  it('combines every same-label stroke into one render group', () => {
+    const groups = brushRenderGroups([first, overlapping], labels)
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].labelId).toBe('LABEL')
+    expect(groups[0].strokes).toHaveLength(2)
+  })
+
+  it('applies opacity once to a same-label brush group', () => {
+    const drawAlphas: number[] = []
+    const mainContext = fakeContext()
+    const layerContext = fakeContext(drawAlphas)
+    const groupContext = fakeContext()
+
+    drawBrushLayer(mainContext, fakeCanvas(layerContext), fakeCanvas(groupContext), [first, overlapping], labels, { scale: 1, offsetX: 0, offsetY: 0 }, .45)
+
+    expect(drawAlphas).toEqual([.45])
+  })
+
+  it('keeps different labels as separate visual layers', () => {
+    const other = { ...overlapping, id: 'other', label_id: 'OTHER' }
+    expect(brushRenderGroups([first, other], labels)).toHaveLength(2)
   })
 })
 

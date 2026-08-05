@@ -6,6 +6,8 @@ import { useAnnotationStore } from '../stores/annotationStore'
 
 interface Props { asset: Asset; imageUrl: string; labels: Label[]; readOnly?: boolean }
 interface BrushStroke { size: number; points: Point[] }
+interface BrushDraft { labelId: string; size: number; points: Point[] }
+interface BrushRenderGroup { labelId: string; color: string; strokes: BrushStroke[]; erasures: BrushStroke[] }
 
 const id = () => crypto.randomUUID()
 
@@ -21,6 +23,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const eraserLastPointRef = useRef<Point | null>(null)
   const eraserPointsRef = useRef<Point[]>([])
   const brushLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const brushGroupLayerRef = useRef<HTMLCanvasElement | null>(null)
   const {
     annotations, add, tool, setTool, selectedLabel, setLabel, undo, redo, history, future,
     previewReplace, commitPreview,
@@ -106,12 +109,15 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       context.restore()
     }
     brushLayerRef.current ??= document.createElement('canvas')
-    drawBrushLayer(context, brushLayerRef.current, annotations, labels, transform, annotationOpacityRatio(annotationOpacity))
+    brushGroupLayerRef.current ??= document.createElement('canvas')
+    const brushDraft = tool === 'brush' && draft.length && activeLabel
+      ? { labelId: activeLabel.label_code, size: brushSize, points: draft }
+      : undefined
+    drawBrushLayer(context, brushLayerRef.current, brushGroupLayerRef.current, annotations, labels, transform, annotationOpacityRatio(annotationOpacity), brushDraft)
 
     const draftColor = activeLabel?.color ?? '#39d9c5'
     if (tool === 'bbox' && dragStart && hoverPoint) drawBoundingBoxPreview(context, dragStart, hoverPoint, transform, draftColor, annotationOpacityRatio(annotationOpacity))
     if (tool === 'polygon' && draft.length) drawPolygonPreview(context, draft, hoverPoint, transform, draftColor, annotationOpacityRatio(annotationOpacity))
-    if (tool === 'brush' && draft.length) drawBrushPreview(context, draft, brushSize, transform, draftColor, annotationOpacityRatio(annotationOpacity))
     if ((tool === 'brush' || tool === 'eraser') && hoverPoint && !readOnly) {
       drawRoundCursor(context, hoverPoint, tool === 'brush' ? brushSize : eraserSize, transform, tool === 'brush' ? draftColor : '#ff7182')
     }
@@ -341,52 +347,81 @@ function drawGeometry(context: CanvasRenderingContext2D, annotation: Annotation,
   }
 }
 
-function drawBrushLayer(
+export function brushRenderGroups(annotations: Annotation[], labels: Label[], draft?: BrushDraft): BrushRenderGroup[] {
+  const groups = new Map<string, BrushRenderGroup>()
+  const groupFor = (labelId: string) => {
+    const existing = groups.get(labelId)
+    if (existing) return existing
+    const group = {
+      labelId,
+      color: labels.find(item => item.label_code === labelId)?.color ?? '#39d9c5',
+      strokes: [],
+      erasures: [],
+    }
+    groups.set(labelId, group)
+    return group
+  }
+  for (const annotation of annotations) {
+    if (annotation.annotation_type !== 'brush') continue
+    const geometry = annotation.geometry_json as { strokes?: BrushStroke[]; erasures?: BrushStroke[] }
+    const group = groupFor(annotation.label_id)
+    group.strokes.push(...(geometry.strokes ?? []))
+    group.erasures.push(...(geometry.erasures ?? []))
+  }
+  if (draft?.points.length) groupFor(draft.labelId).strokes.push({ size: draft.size, points: draft.points })
+  return [...groups.values()].filter(group => group.strokes.length)
+}
+
+export function drawBrushLayer(
   context: CanvasRenderingContext2D,
   layer: HTMLCanvasElement,
+  groupLayer: HTMLCanvasElement,
   annotations: Annotation[],
   labels: Label[],
   transform: ViewTransform,
   opacity: number,
+  draft?: BrushDraft,
 ) {
   const width = Math.max(1, Math.ceil(context.canvas.clientWidth))
   const height = Math.max(1, Math.ceil(context.canvas.clientHeight))
   if (layer.width !== width) layer.width = width
   if (layer.height !== height) layer.height = height
+  if (groupLayer.width !== width) groupLayer.width = width
+  if (groupLayer.height !== height) groupLayer.height = height
   const layerContext = layer.getContext('2d')
-  if (!layerContext) return
+  const groupContext = groupLayer.getContext('2d')
+  if (!layerContext || !groupContext) return
   layerContext.clearRect(0, 0, width, height)
 
-  const erasures: BrushStroke[] = []
-  for (const annotation of annotations) {
-    if (annotation.annotation_type !== 'brush') continue
-    const geometry = annotation.geometry_json as { strokes?: BrushStroke[]; erasures?: BrushStroke[] }
-    const color = labels.find(item => item.label_code === annotation.label_id)?.color ?? '#39d9c5'
-    for (const stroke of geometry.strokes ?? []) {
-      layerContext.save()
-      layerContext.globalAlpha = opacity
-      layerContext.strokeStyle = 'rgba(0,0,0,.7)'
-      layerContext.fillStyle = 'rgba(0,0,0,.7)'
-      layerContext.lineWidth = stroke.size * transform.scale + 3
-      drawBrushStroke(layerContext, stroke.points, transform)
-      layerContext.strokeStyle = color
-      layerContext.fillStyle = color
-      layerContext.lineWidth = stroke.size * transform.scale
-      drawBrushStroke(layerContext, stroke.points, transform)
-      layerContext.restore()
+  for (const group of brushRenderGroups(annotations, labels, draft)) {
+    groupContext.clearRect(0, 0, width, height)
+    groupContext.save()
+    groupContext.strokeStyle = 'rgba(0,0,0,.7)'
+    groupContext.fillStyle = 'rgba(0,0,0,.7)'
+    for (const stroke of group.strokes) {
+      groupContext.lineWidth = stroke.size * transform.scale + 3
+      drawBrushStroke(groupContext, stroke.points, transform)
     }
-    erasures.push(...(geometry.erasures ?? []))
-  }
+    groupContext.strokeStyle = group.color
+    groupContext.fillStyle = group.color
+    for (const stroke of group.strokes) {
+      groupContext.lineWidth = stroke.size * transform.scale
+      drawBrushStroke(groupContext, stroke.points, transform)
+    }
+    if (group.erasures.length) {
+      groupContext.globalCompositeOperation = 'destination-out'
+      groupContext.strokeStyle = '#000'
+      groupContext.fillStyle = '#000'
+      for (const erasure of group.erasures) {
+        groupContext.lineWidth = erasure.size * transform.scale
+        drawBrushStroke(groupContext, erasure.points, transform)
+      }
+    }
+    groupContext.restore()
 
-  if (erasures.length) {
     layerContext.save()
-    layerContext.globalCompositeOperation = 'destination-out'
-    layerContext.strokeStyle = '#000'
-    layerContext.fillStyle = '#000'
-    for (const erasure of erasures) {
-      layerContext.lineWidth = erasure.size * transform.scale
-      drawBrushStroke(layerContext, erasure.points, transform)
-    }
+    layerContext.globalAlpha = opacity
+    layerContext.drawImage(groupLayer, 0, 0)
     layerContext.restore()
   }
   context.drawImage(layer, 0, 0)
@@ -425,16 +460,6 @@ function drawPolygonPreview(context: CanvasRenderingContext2D, points: Point[], 
     context.arc(screen.x, screen.y, 3.5, 0, Math.PI * 2)
     context.fill()
   }
-  context.restore()
-}
-
-function drawBrushPreview(context: CanvasRenderingContext2D, points: Point[], size: number, transform: ViewTransform, color: string, opacity: number) {
-  context.save()
-  context.strokeStyle = color
-  context.fillStyle = color
-  context.globalAlpha = opacity
-  context.lineWidth = size * transform.scale
-  drawBrushStroke(context, points, transform)
   context.restore()
 }
 
