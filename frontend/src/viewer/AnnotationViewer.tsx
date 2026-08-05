@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brush, BoxSelect, Contrast, Crosshair, Eraser, Hand, Maximize2, Redo2, RotateCcw, SunMedium, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { Brush, BoxSelect, Contrast, Crosshair, Eraser, Eye, Hand, Maximize2, Redo2, RotateCcw, SunMedium, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import type { Annotation, Asset, Label, Point, Tool } from '../types'
 import { clampPoint, fitTransform, screenToSource, sourceToScreen, type ViewTransform } from './transforms/coordinates'
 import { useAnnotationStore } from '../stores/annotationStore'
@@ -33,6 +33,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
   const [eraserSize, setEraserSize] = useState(24)
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
+  const [annotationOpacity, setAnnotationOpacity] = useState(80)
   const [rightPanning, setRightPanning] = useState(false)
   const activeLabel = labels.find(label => label.label_code === selectedLabel) ?? labels[0]
 
@@ -97,6 +98,7 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       if (annotation.annotation_type === 'brush') continue
       const label = labels.find(item => item.label_code === annotation.label_id)
       context.save()
+      context.globalAlpha = annotationOpacityRatio(annotationOpacity)
       context.strokeStyle = label?.color ?? '#39d9c5'
       context.fillStyle = `${label?.color ?? '#39d9c5'}33`
       context.lineWidth = 2
@@ -104,16 +106,16 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       context.restore()
     }
     brushLayerRef.current ??= document.createElement('canvas')
-    drawBrushLayer(context, brushLayerRef.current, annotations, labels, transform)
+    drawBrushLayer(context, brushLayerRef.current, annotations, labels, transform, annotationOpacityRatio(annotationOpacity))
 
     const draftColor = activeLabel?.color ?? '#39d9c5'
-    if (tool === 'bbox' && dragStart && hoverPoint) drawBoundingBoxPreview(context, dragStart, hoverPoint, transform, draftColor)
-    if (tool === 'polygon' && draft.length) drawPolygonPreview(context, draft, hoverPoint, transform, draftColor)
-    if (tool === 'brush' && draft.length) drawBrushPreview(context, draft, brushSize, transform, draftColor)
+    if (tool === 'bbox' && dragStart && hoverPoint) drawBoundingBoxPreview(context, dragStart, hoverPoint, transform, draftColor, annotationOpacityRatio(annotationOpacity))
+    if (tool === 'polygon' && draft.length) drawPolygonPreview(context, draft, hoverPoint, transform, draftColor, annotationOpacityRatio(annotationOpacity))
+    if (tool === 'brush' && draft.length) drawBrushPreview(context, draft, brushSize, transform, draftColor, annotationOpacityRatio(annotationOpacity))
     if ((tool === 'brush' || tool === 'eraser') && hoverPoint && !readOnly) {
       drawRoundCursor(context, hoverPoint, tool === 'brush' ? brushSize : eraserSize, transform, tool === 'brush' ? draftColor : '#ff7182')
     }
-  }, [annotations, transform, draft, dragStart, hoverPoint, asset, labels, activeLabel, tool, brushSize, eraserSize, brightness, contrast, readOnly])
+  }, [annotations, transform, draft, dragStart, hoverPoint, asset, labels, activeLabel, tool, brushSize, eraserSize, brightness, contrast, annotationOpacity, readOnly])
 
   const point = (event: React.PointerEvent<HTMLCanvasElement> | React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -284,7 +286,8 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
       <button title="다시 실행" disabled={!future.length || readOnly} onClick={redo}><Redo2 /></button>
       {tool === 'brush' && <label className="range">브러시 {brushSize}px<input aria-label="브러시 크기" type="range" min="2" max="80" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label>}
       {tool === 'eraser' && <label className="range">지우개 {eraserSize}px<input aria-label="지우개 크기" type="range" min="4" max="120" value={eraserSize} onChange={event => setEraserSize(Number(event.target.value))} /></label>}
-      <div className="image-adjustments" aria-label="영상 표시 조정">
+      <div className="image-adjustments" aria-label="영상 및 라벨 표시 조정">
+        <label className="image-adjustment" title="이미 그려진 라벨과 현재 그리는 미리보기의 불투명도를 함께 조절합니다."><Eye /><span>라벨 {annotationOpacity}%</span><input aria-label="라벨 불투명도" type="range" min="0" max="100" step="5" value={annotationOpacity} onInput={event => setAnnotationOpacity(Number(event.currentTarget.value))} /></label>
         <label className="image-adjustment" title="현재 작업 화면의 영상 밝기만 조절합니다."><SunMedium /><span>밝기 {brightness}%</span><input aria-label="영상 밝기" type="range" min="40" max="200" step="5" value={brightness} onInput={event => setBrightness(Number(event.currentTarget.value))} /></label>
         <label className="image-adjustment" title="현재 작업 화면의 영상 명암 대비만 조절합니다."><Contrast /><span>명암 {contrast}%</span><input aria-label="영상 명암" type="range" min="40" max="200" step="5" value={contrast} onInput={event => setContrast(Number(event.currentTarget.value))} /></label>
         <button title="영상 표시 초기화" disabled={brightness === 100 && contrast === 100} onClick={() => { setBrightness(100); setContrast(100) }}><RotateCcw /><span>초기화</span></button>
@@ -309,6 +312,10 @@ export function AnnotationViewer({ asset, imageUrl, labels, readOnly = false }: 
 
 export function imageDisplayFilter(brightness: number, contrast: number): string {
   return `brightness(${brightness}%) contrast(${contrast}%)`
+}
+
+export function annotationOpacityRatio(value: number): number {
+  return Math.max(0, Math.min(100, value)) / 100
 }
 
 export function panTransform(transform: ViewTransform, previous: Point, current: Point): ViewTransform {
@@ -340,6 +347,7 @@ function drawBrushLayer(
   annotations: Annotation[],
   labels: Label[],
   transform: ViewTransform,
+  opacity: number,
 ) {
   const width = Math.max(1, Math.ceil(context.canvas.clientWidth))
   const height = Math.max(1, Math.ceil(context.canvas.clientHeight))
@@ -356,13 +364,13 @@ function drawBrushLayer(
     const color = labels.find(item => item.label_code === annotation.label_id)?.color ?? '#39d9c5'
     for (const stroke of geometry.strokes ?? []) {
       layerContext.save()
+      layerContext.globalAlpha = opacity
       layerContext.strokeStyle = 'rgba(0,0,0,.7)'
       layerContext.fillStyle = 'rgba(0,0,0,.7)'
       layerContext.lineWidth = stroke.size * transform.scale + 3
       drawBrushStroke(layerContext, stroke.points, transform)
       layerContext.strokeStyle = color
       layerContext.fillStyle = color
-      layerContext.globalAlpha = .82
       layerContext.lineWidth = stroke.size * transform.scale
       drawBrushStroke(layerContext, stroke.points, transform)
       layerContext.restore()
@@ -384,10 +392,11 @@ function drawBrushLayer(
   context.drawImage(layer, 0, 0)
 }
 
-function drawBoundingBoxPreview(context: CanvasRenderingContext2D, start: Point, end: Point, transform: ViewTransform, color: string) {
+function drawBoundingBoxPreview(context: CanvasRenderingContext2D, start: Point, end: Point, transform: ViewTransform, color: string, opacity: number) {
   const rectangle = rectangleFromPoints(start, end)
   const screen = sourceToScreen({ x: rectangle.x, y: rectangle.y }, transform)
   context.save()
+  context.globalAlpha = opacity
   context.strokeStyle = color
   context.fillStyle = `${color}2e`
   context.lineWidth = 2
@@ -397,9 +406,10 @@ function drawBoundingBoxPreview(context: CanvasRenderingContext2D, start: Point,
   context.restore()
 }
 
-function drawPolygonPreview(context: CanvasRenderingContext2D, points: Point[], hoverPoint: Point | null, transform: ViewTransform, color: string) {
+function drawPolygonPreview(context: CanvasRenderingContext2D, points: Point[], hoverPoint: Point | null, transform: ViewTransform, color: string, opacity: number) {
   const preview = hoverPoint ? appendDistinctPoint(points, hoverPoint) : points
   context.save()
+  context.globalAlpha = opacity
   context.strokeStyle = color
   context.fillStyle = `${color}24`
   context.lineWidth = 2
@@ -418,11 +428,11 @@ function drawPolygonPreview(context: CanvasRenderingContext2D, points: Point[], 
   context.restore()
 }
 
-function drawBrushPreview(context: CanvasRenderingContext2D, points: Point[], size: number, transform: ViewTransform, color: string) {
+function drawBrushPreview(context: CanvasRenderingContext2D, points: Point[], size: number, transform: ViewTransform, color: string, opacity: number) {
   context.save()
   context.strokeStyle = color
   context.fillStyle = color
-  context.globalAlpha = .78
+  context.globalAlpha = opacity
   context.lineWidth = size * transform.scale
   drawBrushStroke(context, points, transform)
   context.restore()

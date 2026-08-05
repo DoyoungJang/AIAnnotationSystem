@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, panTransform, rectangleFromPoints } from './AnnotationViewer'
+import { annotationOpacityRatio, eraseBrushAnnotations, hitTestAnnotation, imageDisplayFilter, panTransform, rectangleFromPoints } from './AnnotationViewer'
 import type { Annotation } from '../types'
 
 const makeAnnotation = (annotation_type: Annotation['annotation_type'], geometry_json: Record<string, unknown>): Annotation => ({
@@ -51,6 +51,12 @@ describe('live drawing geometry', () => {
 
   it('builds a display-only brightness and contrast filter', () => {
     expect(imageDisplayFilter(135, 80)).toBe('brightness(135%) contrast(80%)')
+  })
+
+  it('converts and clamps the label opacity percentage', () => {
+    expect(annotationOpacityRatio(80)).toBe(.8)
+    expect(annotationOpacityRatio(-10)).toBe(0)
+    expect(annotationOpacityRatio(150)).toBe(1)
   })
 
   it('pans the image by the pointer drag distance without changing zoom', () => {
