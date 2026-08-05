@@ -421,6 +421,7 @@ class ProjectDataItemOut(BaseModel):
 
 class SelectedDataExportRequest(BaseModel):
     asset_ids: list[str] = Field(min_length=1)
+    layout: Literal["folder_structure", "per_image"] = "folder_structure"
 
     @field_validator("asset_ids")
     @classmethod

@@ -73,7 +73,7 @@ class ProjectDataService:
             for task in [task_by_asset.get(asset.id)]
         ]
 
-    def create_selected_7z(self, actor: User, project_id: str, asset_ids: list[str]) -> ExportJob:
+    def create_selected_7z(self, actor: User, project_id: str, asset_ids: list[str], layout: str = "folder_structure") -> ExportJob:
         project = self._require_project_access(actor, project_id)
         requested = set(asset_ids)
         assets = list(self.db.scalars(
@@ -109,9 +109,10 @@ class ProjectDataService:
         self.db.add(job)
         self.db.flush()
         try:
-            archive = self._build_archive(project, assets, task_by_asset, annotations_by_task, schema)
+            archive = self._build_archive(project, assets, task_by_asset, annotations_by_task, schema, layout)
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-            filename = f"{safe_filename(project.name)}-{timestamp}-selected-{job.id[:8]}.7z"
+            suffix = "per-image" if layout == "per_image" else "selected"
+            filename = f"{safe_filename(project.name)}-{timestamp}-{suffix}-{job.id[:8]}.7z"
             self.export_storage.put(filename, archive)
             job.storage_key = filename
             job.status = "COMPLETED"
@@ -121,7 +122,7 @@ class ProjectDataService:
             job.error = "선택 영상 7z 생성에 실패했습니다."
             self.db.commit()
             raise HTTPException(500, job.error) from error
-        self.audit.record(actor, "PROJECT_DATA_EXPORTED", "export", job.id, project_id, f"Exported {len(assets)} selected submitted assets as 7z")
+        self.audit.record(actor, "PROJECT_DATA_EXPORTED", "export", job.id, project_id, f"Exported {len(assets)} selected submitted assets as 7z ({layout})")
         self.db.commit()
         return job
 
@@ -132,16 +133,25 @@ class ProjectDataService:
         task_by_asset: dict[str, AnnotationTask],
         annotations_by_task: dict[str, list[Annotation]],
         schema: LabelSchemaVersion | None,
+        layout: str,
     ) -> bytes:
         buffer = io.BytesIO()
         manifest_items: list[dict[str, object]] = []
         used_paths: set[str] = set()
+        used_package_paths: set[str] = set()
         with py7zr.SevenZipFile(buffer, mode="w") as bundle:
             for asset in assets:
                 task = task_by_asset[asset.id]
                 relative_path = unique_archive_path(safe_archive_path(asset.relative_path or asset.original_filename), asset.id, used_paths)
-                image_path = f"images/{relative_path}"
-                annotation_path = f"annotations/{relative_path}.json"
+                if layout == "per_image":
+                    path = PurePosixPath(relative_path)
+                    package_path = unique_archive_path((path.parent / path.stem).as_posix(), asset.id, used_package_paths)
+                    image_path = f"per-image/{package_path}/{path.name}"
+                    annotation_path = f"per-image/{package_path}/result.json"
+                else:
+                    package_path = None
+                    image_path = f"images/{relative_path}"
+                    annotation_path = f"annotations/{relative_path}.json"
                 bundle.writestr(self.asset_storage.read(asset.storage_key), image_path)
                 annotation_payload = {
                     "project_id": project.id,
@@ -156,6 +166,8 @@ class ProjectDataService:
                     "reviewer_id": task.reviewer_id,
                     "annotations": [serialize_annotation(annotation) for annotation in annotations_by_task[task.id]],
                 }
+                if layout == "per_image" and schema:
+                    annotation_payload["label_schema"] = {"version": schema.version, **schema.schema_json}
                 bundle.writestr(json.dumps(annotation_payload, ensure_ascii=False, indent=2).encode("utf-8"), annotation_path)
                 manifest_items.append({
                     "asset_id": asset.id,
@@ -166,6 +178,8 @@ class ProjectDataService:
                     "annotation_archive_path": annotation_path,
                     "annotation_count": len(annotations_by_task[task.id]),
                 })
+                if package_path is not None:
+                    manifest_items[-1]["per_image_folder"] = f"per-image/{package_path}"
             if schema:
                 bundle.writestr(json.dumps({"version": schema.version, **schema.schema_json}, ensure_ascii=False, indent=2).encode("utf-8"), "labels/schema.json")
             manifest = {
@@ -173,6 +187,7 @@ class ProjectDataService:
                 "project_id": project.id,
                 "project_name": project.name,
                 "created_at": datetime.now(timezone.utc).isoformat(),
+                "layout": layout,
                 "folder_structure_preserved": True,
                 "items": manifest_items,
             }

@@ -7,6 +7,7 @@ import { AnnotationViewer } from '../viewer/AnnotationViewer'
 
 export type ProjectDataFilter = 'ALL' | 'UNWORKED' | 'SUBMITTED' | 'REVIEWED'
 type ProjectDataSort = 'PATH_ASC' | 'PATH_DESC' | 'STATUS'
+type ProjectDataArchiveLayout = 'folder_structure' | 'per_image'
 
 const exportableStatuses = new Set<TaskStatus>(['SUBMITTED', 'IN_REVIEW', 'APPROVED', 'REJECTED'])
 const submittedStatuses = new Set<TaskStatus>(['SUBMITTED', 'IN_REVIEW'])
@@ -41,6 +42,7 @@ export function ProjectData({ projects, users }: { projects: Project[]; users: U
   const [filter, setFilter] = useState<ProjectDataFilter>('ALL')
   const [sort, setSort] = useState<ProjectDataSort>('PATH_ASC')
   const [search, setSearch] = useState('')
+  const [archiveLayout, setArchiveLayout] = useState<ProjectDataArchiveLayout>('folder_structure')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [active, setActive] = useState<ProjectDataItem>()
   const [previewUrl, setPreviewUrl] = useState('')
@@ -114,10 +116,12 @@ export function ProjectData({ projects, users }: { projects: Project[]; users: U
     if (!projectId || !selected.size) return
     setExporting(true); setError(''); setMessage('')
     try {
-      const job = await request<ExportJob>(`/projects/${projectId}/data-export`, { method: 'POST', body: JSON.stringify({ asset_ids: [...selected] }) })
+      const job = await request<ExportJob>(`/projects/${projectId}/data-export`, { method: 'POST', body: JSON.stringify({ asset_ids: [...selected], layout: archiveLayout }) })
       const filename = job.storage_key?.split(/[\\/]/).at(-1) ?? `project-data-${job.id}.7z`
       await downloadExport(job.id, filename)
-      setMessage(`${selected.size}개 영상을 폴더 구조 그대로 7z로 저장했습니다.`)
+      setMessage(archiveLayout === 'per_image'
+        ? `${selected.size}개 영상을 이미지별 원본+result.json 묶음으로 저장했습니다.`
+        : `${selected.size}개 영상을 폴더 구조 그대로 7z로 저장했습니다.`)
     } catch (cause) {
       setError(errorText(cause, '7z 파일을 만들거나 내려받지 못했습니다.'))
     } finally { setExporting(false) }
@@ -142,6 +146,7 @@ export function ProjectData({ projects, users }: { projects: Project[]; users: U
       <div className="project-data-summary"><span>전체 <strong>{items.length}</strong></span><span>미작업 <strong>{items.filter(item => projectDataState(item) === 'UNWORKED').length}</strong></span><span>제출됨 <strong>{items.filter(item => projectDataState(item) === 'SUBMITTED').length}</strong></span><span>검수 완료 <strong>{items.filter(item => projectDataState(item) === 'REVIEWED').length}</strong></span></div>
       <div className="project-data-exportbar">
         <button onClick={toggleVisible} disabled={!selectableVisible.length}>{allVisibleSelected ? <CheckSquare2 /> : <Square />} 현재 목록의 저장 가능 영상 선택</button>
+        <label>7z 구성<select value={archiveLayout} onChange={event => setArchiveLayout(event.target.value as ProjectDataArchiveLayout)}><option value="folder_structure">폴더 구조 분리형</option><option value="per_image">이미지별 결과 묶음</option></select></label>
         <span>{selected.size}개 선택 · 제출/검수 상태만 저장 가능</span>
         <button className="primary" onClick={() => void createArchive()} disabled={!selected.size || exporting}><Archive /> {exporting ? '7z 생성 중…' : '선택 영상 7z 저장'}</button>
       </div>

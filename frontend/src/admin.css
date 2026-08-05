@@ -206,7 +206,9 @@
 .project-data-search input { padding-left: 34px; }
 .project-data-summary { display: flex; gap: 22px; margin-top: 15px; padding: 11px 13px; border: 1px solid #183541; border-radius: 8px; background: #08151d; color: var(--muted); font-size: 11px; }
 .project-data-summary strong { margin-left: 4px; color: #91e9dd; font: 600 12px 'DM Mono'; }
-.project-data-exportbar { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin-top: 12px; }
+.project-data-exportbar { display: grid; grid-template-columns: auto minmax(180px,220px) 1fr auto; gap: 12px; align-items: end; margin-top: 12px; }
+.project-data-exportbar > label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.project-data-exportbar > label select { width: 100%; padding: 9px 10px; }
 .project-data-exportbar > span { color: var(--muted); font-size: 11px; }
 .project-data-exportbar > button { white-space: nowrap; }
 .project-data-notice { margin-bottom: 0; }

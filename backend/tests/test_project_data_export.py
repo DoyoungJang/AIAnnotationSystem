@@ -103,3 +103,23 @@ def test_rejects_unsubmitted_asset_and_unsafe_archive_path(context) -> None:
     assert unavailable.value.status_code == 422
     with pytest.raises(ValueError):
         safe_archive_path("../outside.png")
+
+
+def test_exports_each_image_with_its_result_in_a_self_contained_folder(context, tmp_path: Path) -> None:
+    db, settings, admin, project, submitted, _ = context
+    job = ProjectDataService(db, settings).create_selected_7z(admin, project.id, [submitted.id], "per_image")
+    archive = (settings.export_root / job.storage_key).read_bytes()
+
+    with py7zr.SevenZipFile(io.BytesIO(archive), mode="r") as bundle:
+        names = set(bundle.getnames())
+        image_path = "per-image/patient-1/session-a/submitted/submitted.png"
+        result_path = "per-image/patient-1/session-a/submitted/result.json"
+        assert {image_path, result_path, "labels/schema.json", "manifest.json"}.issubset(names)
+        unpacked = tmp_path / "per-image-unpacked"
+        bundle.extract(path=unpacked, targets=[result_path, "manifest.json"])
+        result = json.loads((unpacked / result_path).read_text(encoding="utf-8"))
+        manifest = json.loads((unpacked / "manifest.json").read_text(encoding="utf-8"))
+        assert result["annotations"][0]["label_id"] == "LESION"
+        assert result["label_schema"]["labels"][0]["label_name"] == "Lesion"
+        assert manifest["layout"] == "per_image"
+        assert manifest["items"][0]["per_image_folder"] == "per-image/patient-1/session-a/submitted"

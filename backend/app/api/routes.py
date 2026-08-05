@@ -259,7 +259,7 @@ def project_data_items(project_id: str, db: Session = Depends(get_db), settings:
 
 
 @router.post("/projects/{project_id}/data-export", response_model=ExportOut, status_code=201)
-def create_selected_data_export(project_id: str, payload: SelectedDataExportRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ProjectDataService(db, settings).create_selected_7z(actor, project_id, payload.asset_ids)
+def create_selected_data_export(project_id: str, payload: SelectedDataExportRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings), actor: User = Depends(current_user)): return ProjectDataService(db, settings).create_selected_7z(actor, project_id, payload.asset_ids, payload.layout)
 
 
 @router.get("/export-folders", response_model=list[str])
