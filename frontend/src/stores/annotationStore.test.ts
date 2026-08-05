@@ -94,4 +94,70 @@ describe('annotation history', () => {
     useAnnotationStore.getState().undo()
     expect(useAnnotationStore.getState().annotations).toEqual([original])
   })
+
+  it('merges overlapping brush strokes with the same label into one annotation', () => {
+    const first = { ...annotation, id: 'brush-a', annotation_type: 'brush' as const, label_id: 'LESION', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 20, y: 0 }] }],
+    } }
+    const overlapping = { ...first, id: 'brush-b', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 24, y: 0 }, { x: 40, y: 0 }] }],
+    } }
+
+    useAnnotationStore.getState().add(first)
+    useAnnotationStore.getState().add(overlapping)
+
+    const [merged] = useAnnotationStore.getState().annotations
+    expect(useAnnotationStore.getState().annotations).toHaveLength(1)
+    expect(merged.id).toBe('brush-a')
+    expect(merged.geometry_json.strokes).toEqual([
+      ...first.geometry_json.strokes,
+      ...overlapping.geometry_json.strokes,
+    ])
+  })
+
+  it('keeps overlapping brush strokes separate when their label ids differ', () => {
+    const first = { ...annotation, id: 'brush-a', annotation_type: 'brush' as const, label_id: 'LESION', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 20, y: 0 }] }],
+    } }
+    const otherLabel = { ...first, id: 'brush-b', label_id: 'VESSEL' }
+
+    useAnnotationStore.getState().add(first)
+    useAnnotationStore.getState().add(otherLabel)
+
+    expect(useAnnotationStore.getState().annotations).toHaveLength(2)
+  })
+
+  it('keeps separate same-label brush regions when they do not overlap', () => {
+    const first = { ...annotation, id: 'brush-a', annotation_type: 'brush' as const, label_id: 'LESION', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 20, y: 0 }] }],
+    } }
+    const separated = { ...first, id: 'brush-b', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 50, y: 0 }, { x: 70, y: 0 }] }],
+    } }
+
+    useAnnotationStore.getState().add(first)
+    useAnnotationStore.getState().add(separated)
+
+    expect(useAnnotationStore.getState().annotations).toHaveLength(2)
+  })
+
+  it('merges every same-label region connected by a new brush stroke', () => {
+    const first = { ...annotation, id: 'brush-a', annotation_type: 'brush' as const, label_id: 'LESION', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] }],
+    } }
+    const second = { ...first, id: 'brush-b', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 30, y: 0 }, { x: 40, y: 0 }] }],
+    } }
+    const bridge = { ...first, id: 'brush-c', geometry_json: {
+      strokes: [{ size: 10, points: [{ x: 10, y: 0 }, { x: 30, y: 0 }] }],
+    } }
+    useAnnotationStore.getState().load([first, second])
+
+    useAnnotationStore.getState().add(bridge)
+
+    expect(useAnnotationStore.getState().annotations).toHaveLength(1)
+    expect(useAnnotationStore.getState().annotations[0].id).toBe('brush-a')
+    expect(useAnnotationStore.getState().deletedAnnotationIds).toEqual(['brush-b'])
+    expect(useAnnotationStore.getState().annotations[0].geometry_json.strokes).toHaveLength(3)
+  })
 })

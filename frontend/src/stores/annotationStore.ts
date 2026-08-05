@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Annotation, Tool } from '../types'
+import { addOrMergeBrushAnnotation } from '../brushAnnotations'
 
 interface AnnotationState {
   annotations: Annotation[]
@@ -73,7 +74,7 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
     }
   }),
   add: item => set(state => {
-    const annotations = [...state.annotations, item]
+    const annotations = addOrMergeBrushAnnotation(state.annotations, item)
     return {
       annotations,
       history: [...state.history.slice(-49), snapshot(state.annotations)],
